@@ -28,14 +28,14 @@ func main() {
 	}
 
 	// 4. Setup NATS
-	js, nc, err := nats.NewNATSConnection(cfg)
+	natsMgr, err := nats.NewJetStreamManager(cfg)
 	if err != nil {
 		log.Fatal("Could not connect to NATS:", err)
 	}
-	defer nc.Close()
+	defer natsMgr.Close()
 
 	// 5. Initialize Services
-	alertService := services.NewAlertService(db, rdb, js)
+	alertService := services.NewAlertService(db, rdb, natsMgr.JS)
 
 	// 6. Initialize Handlers
 	h := handlers.NewHandler(alertService)
