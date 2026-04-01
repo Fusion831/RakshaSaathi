@@ -1,8 +1,8 @@
-# GharSeva — System Architecture & Development Context
+# RakshaSaathi — System Architecture & Development Context
 
 ## 1. PROJECT OVERVIEW
 
-GharSeva is a real-time, AI-powered elderly healthcare monitoring system designed to detect emergencies, monitor health patterns, and ensure timely intervention through an intelligent escalation pipeline.
+RakshaSaathi is a real-time, AI-powered elderly healthcare monitoring system designed to detect emergencies, monitor health patterns, and ensure timely intervention through an intelligent escalation pipeline.
 
 The system focuses on:
 - Fall detection
