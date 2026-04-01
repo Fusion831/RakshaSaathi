@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -19,10 +20,15 @@ func TestAlertEngine_Determinism(t *testing.T) {
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Skip("Skipping AlertEngine test: server not reachable")
 	}
+	// Flush Redis to ensure a clean state
+	rdb.FlushDB(ctx)
 	defer rdb.Close()
 
 	repo := repositories.NewAlertRepository(rdb)
-	engine := NewAlertEngine(repo, nil, rdb)
+	vitalsRepo := repositories.NewVitalsRepository(rdb)
+	ws := NewWSBroadcaster()
+	engine := NewAlertEngine(repo, vitalsRepo, ws, nil, rdb)
+	engine.EscalationInterval = 10 * time.Millisecond // Accelerate for testing
 
 	userID := "user-123"
 	eventID := "event-456"
@@ -33,11 +39,32 @@ func TestAlertEngine_Determinism(t *testing.T) {
 		Type:      "fall.detected",
 		UserID:    userID,
 		Timestamp: time.Now(),
+		Payload:   json.RawMessage(`{"confidence": 0.95}`),
 	}
 
 	err := engine.HandleEvent(ctx, event)
 	if err != nil {
 		t.Fatalf("Failed to handle event: %v", err)
+	}
+
+	// 1.a. Verify alert was created in Redis (Scanning for it since ID is dynamic)
+	var alert *models.Alert
+	keys, _ := rdb.Keys(ctx, "alert:*").Result()
+	for _, k := range keys {
+		data, _ := rdb.Get(ctx, k).Bytes()
+		var temp models.Alert
+		json.Unmarshal(data, &temp)
+		if temp.UserID == userID {
+			alert = &temp
+			break
+		}
+	}
+
+	if alert == nil {
+		t.Fatal("Expected alert to be found in Redis")
+	}
+	if alert.CurrentState != models.AlertStateFallDetected {
+		t.Errorf("Expected state %s, got %s", models.AlertStateFallDetected, alert.CurrentState)
 	}
 
 	// 2. Verify Idempotency (Processing same event again shouldn't fail or duplicate)
@@ -47,13 +74,20 @@ func TestAlertEngine_Determinism(t *testing.T) {
 	}
 
 	// 3. Verify Deterministic Transitions (simulating time-based advance)
-	// Alert key will be generated as alert:userID:unix
-	// For testing, let's manually trigger AdvanceState
+	err = engine.AdvanceState(ctx, alert.AlertID)
+	if err != nil {
+		t.Fatalf("Failed to advance state: %v", err)
+	}
 
-	// We need to find the alertID created. For simplicity in test, let's just trigger on fall detected.
-	// In production, we'd use a more deterministic alertID prefix or store in a user->active_alert map.
-	// But let's check if transitions are correct logic-wise.
+	updatedAlert, _ := repo.GetAlertState(ctx, alert.AlertID)
+	if updatedAlert == nil {
+		t.Fatal("Expected updated alert to exist")
+	}
+	if updatedAlert.CurrentState != models.AlertStateWaitingConfirmation {
+		t.Errorf("Expected state %s, got %s", models.AlertStateWaitingConfirmation, updatedAlert.CurrentState)
+	}
 
+	// 4. Test logic transitions
 	if engine.getNextState(models.AlertStateFallDetected) != models.AlertStateWaitingConfirmation {
 		t.Error("Transition FallDetected -> WaitingConfirmation failed")
 	}

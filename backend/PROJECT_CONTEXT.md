@@ -106,14 +106,15 @@ NO direct service-to-service coupling.
 
 ---
 
-### 4. Idempotency
-- Every event has event_id
-- Duplicate events must not create duplicate alerts
+### 4. Idempotency & Tiered Storage
+- **Event Deduplication**: 24-hour Redis-based `event_id` tracking.
+- **Hot Path**: Raw vitals in Redis (2-hour TTL) for ML and Incident Snapshots (last 10m).
+- **Warm Path**: Downsampled health trends (5m intervals) in PostgreSQL.
 
 ---
 
 ### 5. Low Latency
-- Real-time detection → response within seconds
+- Real-time detection → response within seconds via NATS + Go.
 
 ---
 
@@ -134,10 +135,10 @@ IDLE
 
 ### Behavior:
 
-- Fall or anomaly triggers alert
-- System waits for acknowledgment
-- If no response → escalate
-- Each stage triggers notifications
+- Fall or anomaly triggers alert and captures **Incident Context** (10m vitals).
+- System waits for acknowledgment.
+- If no response → escalate every 30 seconds.
+- Each stage triggers notifications.
 
 ---
 

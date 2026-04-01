@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	corenats "github.com/nats-io/nats.go"
-	"github.com/redis/go-redis/v9"
 	"github.com/Fusion831/RakshaSaathi/internal/config"
 	"github.com/Fusion831/RakshaSaathi/internal/handlers"
 	"github.com/Fusion831/RakshaSaathi/internal/models"
 	"github.com/Fusion831/RakshaSaathi/internal/nats"
 	"github.com/Fusion831/RakshaSaathi/internal/repositories"
 	"github.com/Fusion831/RakshaSaathi/internal/services"
+	"github.com/gin-gonic/gin"
+	corenats "github.com/nats-io/nats.go"
+	"github.com/redis/go-redis/v9"
 )
 
 // NOTE: These tests require a full environment running (NATS, Redis)
@@ -52,11 +52,14 @@ func TestFullIntegration(t *testing.T) {
 		t.Skip("Redis not available for integration test")
 	}
 	defer rdb.Close()
-	
+
 	// Skip real Postgres and just focus on NATS + Redis for now
-	alertSvc := services.NewAlertService(nil, rdb, natsMgr.JS)
 	alertRepo := repositories.NewAlertRepository(rdb)
-	h := handlers.NewHandler(alertSvc)
+	vitalsRepo := repositories.NewVitalsRepository(rdb)
+	ws := services.NewWSBroadcaster()
+	alertSvc := services.NewAlertService(nil, alertRepo)
+	engine := services.NewAlertEngine(alertRepo, vitalsRepo, ws, natsMgr.JS, rdb)
+	h := handlers.NewHandler(alertSvc, engine, ws, natsMgr)
 
 	// 3. Test API Health Check
 	t.Run("API Health Check", func(t *testing.T) {
@@ -76,25 +79,25 @@ func TestFullIntegration(t *testing.T) {
 		subject := "fall.detected"
 		durable := "integration_consumer"
 		alertID := "alert-999"
-		
+
 		msgChan := make(chan *corenats.Msg, 1)
 
 		// Create durable subscription to simulate alert processing
 		_, err := natsMgr.SubscribeDurable(subject, durable, func(m *corenats.Msg) {
 			var event models.BaseEvent
 			json.Unmarshal(m.Data, &event)
-			
+
 			// Simulate triggering an alert in Redis
 			alert := &models.Alert{
 				AlertID:      alertID,
 				UserID:       event.UserID,
-				CurrentState: models.AlertStateTriggered,
+				CurrentState: models.AlertStateFallDetected,
 				Severity:     models.SeverityHigh,
 				CreatedAt:    time.Now(),
 				UpdatedAt:    time.Now(),
 			}
 			alertRepo.SetAlertState(ctx, alert, 5*time.Second)
-			
+
 			msgChan <- m
 			m.Ack()
 		})
@@ -109,7 +112,7 @@ func TestFullIntegration(t *testing.T) {
 			UserID:    "user-99",
 			Timestamp: time.Now(),
 		}
-		
+
 		err = natsMgr.PublishBaseEvent(subject, testEvent)
 		if err != nil {
 			t.Fatalf("Failed to publish: %v", err)
@@ -129,9 +132,8 @@ func TestFullIntegration(t *testing.T) {
 		case <-time.After(3 * time.Second):
 			t.Fatal("Integration flow timed out after 3s")
 		}
-		
+
 		// Clean up Redis
 		alertRepo.DeleteAlertState(ctx, alertID)
 	})
 }
-

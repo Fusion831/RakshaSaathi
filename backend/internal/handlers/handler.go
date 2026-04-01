@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -14,14 +15,16 @@ import (
 type Handler struct {
 	alertService *services.AlertService
 	engine       *services.AlertEngine
+	broadcaster  *services.WSBroadcaster
 	natsMgr      *nats.JetStreamManager
 	upgrader     websocket.Upgrader
 }
 
-func NewHandler(alertService *services.AlertService, engine *services.AlertEngine, natsMgr *nats.JetStreamManager) *Handler {
+func NewHandler(alertService *services.AlertService, engine *services.AlertEngine, broadcaster *services.WSBroadcaster, natsMgr *nats.JetStreamManager) *Handler {
 	return &Handler{
 		alertService: alertService,
 		engine:       engine,
+		broadcaster:  broadcaster,
 		natsMgr:      natsMgr,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -89,21 +92,29 @@ func (h *Handler) AcknowledgeAlert(c *gin.Context) {
 		return
 	}
 
+	// Broadcast resolution to dashboard
+	h.broadcaster.BroadcastEvent("alert.resolved", map[string]string{"alert_id": id})
+
 	c.JSON(http.StatusOK, gin.H{"message": "alert acknowledged and resolved"})
 }
 
 func (h *Handler) HandleWebSocket(c *gin.Context) {
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		log.Printf("Failed to upgrade connection: %v", err)
 		return
 	}
-	defer conn.Close()
 
-	for {
-		// Placeholder for WebSocket logic
-		_, _, err := conn.ReadMessage()
-		if err != nil {
-			break
+	h.broadcaster.Register(conn)
+
+	// Keep-alive/Read loop
+	go func() {
+		defer h.broadcaster.Unregister(conn)
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
 		}
-	}
+	}()
 }

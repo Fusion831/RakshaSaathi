@@ -43,9 +43,12 @@ func main() {
 	alertRepo := repositories.NewAlertRepository(rdb)
 	vitalsRepo := repositories.NewVitalsRepository(rdb)
 
-	engine := services.NewAlertEngine(alertRepo, vitalsRepo, natsMgr.JS, rdb)
+	wsBroadcaster := services.NewWSBroadcaster()
+	go wsBroadcaster.Start()
+
+	engine := services.NewAlertEngine(alertRepo, vitalsRepo, wsBroadcaster, natsMgr.JS, rdb)
 	alertService := services.NewAlertService(db, alertRepo)
-	vitalsProcessor := services.NewVitalsProcessor(vitalsRepo)
+	vitalsProcessor := services.NewVitalsProcessor(vitalsRepo, wsBroadcaster)
 	aggregator := services.NewVitalsAggregator(vitalsRepo, db, 5*time.Minute)
 
 	// 5.1 Run Vitals Migrations
@@ -58,7 +61,7 @@ func main() {
 	go aggregator.StartAggregationLoop(context.Background())
 
 	// 7. Initialize Handlers
-	h := handlers.NewHandler(alertService, engine, natsMgr)
+	h := handlers.NewHandler(alertService, engine, wsBroadcaster, natsMgr)
 
 	// 8. Setup HTTP server
 	r := gin.Default()

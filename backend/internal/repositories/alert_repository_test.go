@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/Fusion831/RakshaSaathi/internal/models"
+	"github.com/redis/go-redis/v9"
 )
 
 func TestAlertRepository(t *testing.T) {
@@ -27,7 +27,7 @@ func TestAlertRepository(t *testing.T) {
 	alert := &models.Alert{
 		AlertID:      alertID,
 		UserID:       "user-1",
-		CurrentState: models.AlertStateTriggered,
+		CurrentState: models.AlertStateFallDetected,
 		Severity:     models.SeverityHigh,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
@@ -46,19 +46,19 @@ func TestAlertRepository(t *testing.T) {
 	if savedAlert == nil {
 		t.Fatal("Expected saved alert to be found")
 	}
-	if savedAlert.CurrentState != models.AlertStateTriggered {
-		t.Errorf("Expected state %s, got %s", models.AlertStateTriggered, savedAlert.CurrentState)
+	if savedAlert.CurrentState != models.AlertStateFallDetected {
+		t.Errorf("Expected state %s, got %s", models.AlertStateFallDetected, savedAlert.CurrentState)
 	}
 
 	// 3. Update alert state
-	err = repo.UpdateAlertState(ctx, alertID, models.AlertStateEscalated)
+	err = repo.UpdateAlertState(ctx, alertID, models.AlertStateLevel1Alert)
 	if err != nil {
 		t.Fatalf("Failed to update alert state: %v", err)
 	}
 
 	updatedAlert, _ := repo.GetAlertState(ctx, alertID)
-	if updatedAlert.CurrentState != models.AlertStateEscalated {
-		t.Errorf("Expected state %s, got %s", models.AlertStateEscalated, updatedAlert.CurrentState)
+	if updatedAlert.CurrentState != models.AlertStateLevel1Alert {
+		t.Errorf("Expected state %s, got %s", models.AlertStateLevel1Alert, updatedAlert.CurrentState)
 	}
 
 	// 4. Cleanup
@@ -67,4 +67,3 @@ func TestAlertRepository(t *testing.T) {
 		t.Fatalf("Failed to delete alert state: %v", err)
 	}
 }
-

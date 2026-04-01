@@ -16,16 +16,21 @@ import (
 type AlertEngine struct {
 	repo       *repositories.AlertRepository
 	vitalsRepo *repositories.VitalsRepository
+	ws         *WSBroadcaster
 	js         nats.JetStreamContext
 	rdb        *redis.Client
+	// Configuration (to make testing faster)
+	EscalationInterval time.Duration
 }
 
-func NewAlertEngine(repo *repositories.AlertRepository, vitalsRepo *repositories.VitalsRepository, js nats.JetStreamContext, rdb *redis.Client) *AlertEngine {
+func NewAlertEngine(repo *repositories.AlertRepository, vitalsRepo *repositories.VitalsRepository, ws *WSBroadcaster, js nats.JetStreamContext, rdb *redis.Client) *AlertEngine {
 	return &AlertEngine{
-		repo:       repo,
-		vitalsRepo: vitalsRepo,
-		js:         js,
-		rdb:        rdb,
+		repo:               repo,
+		vitalsRepo:         vitalsRepo,
+		ws:                 ws,
+		js:                 js,
+		rdb:                rdb,
+		EscalationInterval: 30 * time.Second,
 	}
 }
 
@@ -75,8 +80,11 @@ func (e *AlertEngine) initiateFallAlert(ctx context.Context, event models.BaseEv
 
 	log.Printf("New Fall Alert initiated: %s for user %s", alertID, event.UserID)
 
+	// Broadcast alert creation
+	e.ws.BroadcastEvent("alert.created", alert)
+
 	// Transition to WAITING_CONFIRMATION after fallback
-	go e.scheduleEscalation(alertID, 30*time.Second)
+	go e.scheduleEscalation(alertID, e.EscalationInterval)
 
 	return nil
 }
@@ -111,9 +119,14 @@ func (e *AlertEngine) AdvanceState(ctx context.Context, alertID string) error {
 		return err
 	}
 
+	// Broadcast alert escalation
+	alert.CurrentState = nextState
+	alert.UpdatedAt = time.Now()
+	e.ws.BroadcastEvent("alert.escalated", alert)
+
 	// If not at max level, schedule next escalation
 	if nextState != models.AlertStateLevel3Alert && nextState != models.AlertStateResolved {
-		go e.scheduleEscalation(alertID, 30*time.Second)
+		go e.scheduleEscalation(alertID, e.EscalationInterval)
 	}
 
 	return nil

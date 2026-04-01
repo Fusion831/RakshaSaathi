@@ -5,15 +5,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/Fusion831/RakshaSaathi/internal/nats"
 	"github.com/Fusion831/RakshaSaathi/internal/services"
+	"github.com/gin-gonic/gin"
 )
 
 func TestHealthCheck(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// Mocking dependencies
-	h := NewHandler(&services.AlertService{})
+	// Mocking dependencies (using nils for simplicity where they are not used)
+	h := NewHandler(&services.AlertService{}, &services.AlertEngine{}, &services.WSBroadcaster{}, &nats.JetStreamManager{})
 
 	r := gin.Default()
 	r.GET("/health", h.HealthCheck)
@@ -31,4 +32,3 @@ func TestHealthCheck(t *testing.T) {
 		t.Errorf("Expected body %s, got %s", expected, w.Body.String())
 	}
 }
-

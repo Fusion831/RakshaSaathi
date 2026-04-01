@@ -55,11 +55,11 @@ func TestAlert_States(t *testing.T) {
 	alert := Alert{
 		AlertID:      "alert_123",
 		UserID:       "user_456",
-		CurrentState: AlertStateTriggered,
+		CurrentState: AlertStateFallDetected,
 		Severity:     SeverityHigh,
 	}
 
-	if alert.CurrentState != "TRIGGERED" {
-		t.Errorf("Expected state TRIGGERED, got %s", alert.CurrentState)
+	if alert.CurrentState != AlertStateFallDetected {
+		t.Errorf("Expected state %s, got %s", AlertStateFallDetected, alert.CurrentState)
 	}
 }

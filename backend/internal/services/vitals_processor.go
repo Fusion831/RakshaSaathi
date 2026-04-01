@@ -10,11 +10,13 @@ import (
 
 type VitalsProcessor struct {
 	vitalsRepo *repositories.VitalsRepository
+	ws         *WSBroadcaster
 }
 
-func NewVitalsProcessor(repo *repositories.VitalsRepository) *VitalsProcessor {
+func NewVitalsProcessor(repo *repositories.VitalsRepository, ws *WSBroadcaster) *VitalsProcessor {
 	return &VitalsProcessor{
 		vitalsRepo: repo,
+		ws:         ws,
 	}
 }
 
@@ -26,6 +28,13 @@ func (s *VitalsProcessor) ProcessVitals(event models.BaseEvent) error {
 		log.Printf("[VitalsProcessor] Failed to unmarshal vitals payload: %v", err)
 		return err
 	}
+
+	// Broadcast live vitals for the dashboard
+	s.ws.BroadcastEvent("vitals.live", map[string]interface{}{
+		"user_id":   event.UserID,
+		"timestamp": event.Timestamp,
+		"vitals":    vitals,
+	})
 
 	// Persist to Hot Storage (Redis) with UserID and Score (Timestamp)
 	// Score: event.Timestamp.Unix()
