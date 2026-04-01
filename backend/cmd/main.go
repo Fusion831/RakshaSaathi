@@ -4,11 +4,11 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sihhackathon/gharseva/internal/config"
-	"github.com/sihhackathon/gharseva/internal/handlers"
-	"github.com/sihhackathon/gharseva/internal/nats"
-	"github.com/sihhackathon/gharseva/internal/repositories"
-	"github.com/sihhackathon/gharseva/internal/services"
+	"github.com/Fusion831/RakshaSaathi/internal/config"
+	"github.com/Fusion831/RakshaSaathi/internal/handlers"
+	"github.com/Fusion831/RakshaSaathi/internal/nats"
+	"github.com/Fusion831/RakshaSaathi/internal/repositories"
+	"github.com/Fusion831/RakshaSaathi/internal/services"
 )
 
 func main() {
@@ -52,3 +52,4 @@ func main() {
 		log.Fatal("Could not start server:", err)
 	}
 }
+

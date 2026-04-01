@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/sihhackathon/gharseva/internal/services"
+	"github.com/Fusion831/RakshaSaathi/internal/services"
 )
 
 type Handler struct {
@@ -43,3 +43,4 @@ func (h *Handler) HandleWebSocket(c *gin.Context) {
 		}
 	}
 }
+

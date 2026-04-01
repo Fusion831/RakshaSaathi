@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/sihhackathon/gharseva/internal/config"
+	"github.com/Fusion831/RakshaSaathi/internal/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -21,3 +21,4 @@ func NewPostgresDB(cfg *config.Config) (*gorm.DB, error) {
 	log.Println("Connected to PostgreSQL successfully")
 	return db, nil
 }
+

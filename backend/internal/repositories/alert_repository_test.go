@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/sihhackathon/gharseva/internal/models"
+	"github.com/Fusion831/RakshaSaathi/internal/models"
 )
 
 func TestAlertRepository(t *testing.T) {
@@ -67,3 +67,4 @@ func TestAlertRepository(t *testing.T) {
 		t.Fatalf("Failed to delete alert state: %v", err)
 	}
 }
+

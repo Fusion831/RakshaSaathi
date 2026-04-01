@@ -12,12 +12,12 @@ import (
 	"github.com/gin-gonic/gin"
 	corenats "github.com/nats-io/nats.go"
 	"github.com/redis/go-redis/v9"
-	"github.com/sihhackathon/gharseva/internal/config"
-	"github.com/sihhackathon/gharseva/internal/handlers"
-	"github.com/sihhackathon/gharseva/internal/models"
-	"github.com/sihhackathon/gharseva/internal/nats"
-	"github.com/sihhackathon/gharseva/internal/repositories"
-	"github.com/sihhackathon/gharseva/internal/services"
+	"github.com/Fusion831/RakshaSaathi/internal/config"
+	"github.com/Fusion831/RakshaSaathi/internal/handlers"
+	"github.com/Fusion831/RakshaSaathi/internal/models"
+	"github.com/Fusion831/RakshaSaathi/internal/nats"
+	"github.com/Fusion831/RakshaSaathi/internal/repositories"
+	"github.com/Fusion831/RakshaSaathi/internal/services"
 )
 
 // NOTE: These tests require a full environment running (NATS, Redis)
@@ -134,3 +134,4 @@ func TestFullIntegration(t *testing.T) {
 		alertRepo.DeleteAlertState(ctx, alertID)
 	})
 }
+

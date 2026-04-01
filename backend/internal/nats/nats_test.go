@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/sihhackathon/gharseva/internal/config"
-	"github.com/sihhackathon/gharseva/internal/models"
+	"github.com/Fusion831/RakshaSaathi/internal/config"
+	"github.com/Fusion831/RakshaSaathi/internal/models"
 )
 
 // NOTE: These tests require a running NATS server at nats://localhost:4222
@@ -57,3 +57,4 @@ func TestJetStreamManager_PublishAndSubscribe(t *testing.T) {
 		t.Fatal("Timed out waiting for message")
 	}
 }
+

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sihhackathon/gharseva/internal/services"
+	"github.com/Fusion831/RakshaSaathi/internal/services"
 )
 
 func TestHealthCheck(t *testing.T) {
@@ -31,3 +31,4 @@ func TestHealthCheck(t *testing.T) {
 		t.Errorf("Expected body %s, got %s", expected, w.Body.String())
 	}
 }
+

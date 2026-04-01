@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/sihhackathon/gharseva/internal/config"
+	"github.com/Fusion831/RakshaSaathi/internal/config"
 )
 
 func NewRedisClient(cfg *config.Config) (*redis.Client, error) {
@@ -25,3 +25,4 @@ func NewRedisClient(cfg *config.Config) (*redis.Client, error) {
 	log.Println("Connected to Redis successfully")
 	return rdb, nil
 }
+
