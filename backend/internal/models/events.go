@@ -48,11 +48,14 @@ type AnomalyEvent struct {
 type AlertState string
 
 const (
-	AlertStateTriggered AlertState = "TRIGGERED"
-	AlertStateVerifying AlertState = "VERIFYING"
-	AlertStateEscalated AlertState = "ESCALATED"
-	AlertStateResolved  AlertState = "RESOLVED"
-	AlertStateFalseAlarm AlertState = "FALSE_ALARM"
+	AlertStateIdle                AlertState = "IDLE"
+	AlertStateFallDetected        AlertState = "FALL_DETECTED"
+	AlertStateWaitingConfirmation AlertState = "WAITING_CONFIRMATION"
+	AlertStateLevel1Alert         AlertState = "LEVEL_1_ALERT"
+	AlertStateLevel2Alert         AlertState = "LEVEL_2_ALERT"
+	AlertStateLevel3Alert         AlertState = "LEVEL_3_ALERT"
+	AlertStateResolved            AlertState = "RESOLVED"
+	AlertStateFalseAlarm          AlertState = "FALSE_ALARM"
 )
 
 // Alert represents an entry in the alert state machine and escalation pipeline.
