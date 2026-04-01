@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -13,16 +14,18 @@ import (
 )
 
 type AlertEngine struct {
-	repo *repositories.AlertRepository
-	js   nats.JetStreamContext
-	rdb  *redis.Client
+	repo       *repositories.AlertRepository
+	vitalsRepo *repositories.VitalsRepository
+	js         nats.JetStreamContext
+	rdb        *redis.Client
 }
 
-func NewAlertEngine(repo *repositories.AlertRepository, js nats.JetStreamContext, rdb *redis.Client) *AlertEngine {
+func NewAlertEngine(repo *repositories.AlertRepository, vitalsRepo *repositories.VitalsRepository, js nats.JetStreamContext, rdb *redis.Client) *AlertEngine {
 	return &AlertEngine{
-		repo: repo,
-		js:   js,
-		rdb:  rdb,
+		repo:       repo,
+		vitalsRepo: vitalsRepo,
+		js:         js,
+		rdb:        rdb,
 	}
 }
 
@@ -50,13 +53,18 @@ func (e *AlertEngine) HandleEvent(ctx context.Context, event models.BaseEvent) e
 func (e *AlertEngine) initiateFallAlert(ctx context.Context, event models.BaseEvent) error {
 	alertID := fmt.Sprintf("alert:%s:%d", event.UserID, time.Now().Unix())
 
+	// Fetch last 10 minutes vitals context from Redis
+	vitalsContext, _ := e.vitalsRepo.GetVitalsRange(event.UserID, event.Timestamp.Add(-10*time.Minute).Unix(), event.Timestamp.Unix())
+	contextJSON, _ := json.Marshal(vitalsContext)
+
 	alert := &models.Alert{
-		AlertID:      alertID,
-		UserID:       event.UserID,
-		CurrentState: models.AlertStateFallDetected,
-		Severity:     models.SeverityHigh,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		AlertID:         alertID,
+		UserID:          event.UserID,
+		CurrentState:    models.AlertStateFallDetected,
+		Severity:        models.SeverityHigh,
+		IncidentContext: contextJSON,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	// Store in Redis with initial TTL (e.g., for verification window)

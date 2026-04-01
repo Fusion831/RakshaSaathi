@@ -60,12 +60,27 @@ const (
 
 // Alert represents an entry in the alert state machine and escalation pipeline.
 type Alert struct {
-	AlertID      string     `json:"alert_id" gorm:"primaryKey"`
-	UserID       string     `json:"user_id" gorm:"index"`
-	CurrentState AlertState `json:"current_state"`
-	Severity     Severity   `json:"severity"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	AlertID         string          `json:"alert_id" gorm:"primaryKey"`
+	UserID          string          `json:"user_id" gorm:"index"`
+	CurrentState    AlertState      `json:"current_state"`
+	Severity        Severity        `json:"severity"`
+	IncidentContext json.RawMessage `json:"incident_context" gorm:"type:jsonb"` // Last 10m vitals
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+}
+
+// VitalsAggregated stores downsampled health metrics for historical trends.
+type VitalsAggregated struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    string    `json:"user_id" gorm:"index"`
+	Interval  time.Time `json:"interval" gorm:"index"` // Truncated to the aggregation period (1m or 5m)
+	AvgHR     float64   `json:"avg_hr"`
+	MaxHR     float64   `json:"max_hr"`
+	MinHR     float64   `json:"min_hr"`
+	AvgSpO2   float64   `json:"avg_spo2"`
+	MaxSpO2   float64   `json:"max_spo2"`
+	MinSpO2   float64   `json:"min_spo2"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Validation Helpers (to be expanded with a validator library if needed)
