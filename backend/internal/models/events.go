@@ -1,0 +1,78 @@
+package models
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// BaseEvent represents the structure for all event-driven messages in the system.
+type BaseEvent struct {
+	EventID   string          `json:"event_id" validate:"required"`
+	Type      string          `json:"type" validate:"required"` // e.g., "vitals.updated", "fall.detected"
+	UserID    string          `json:"user_id" validate:"required"`
+	Timestamp time.Time       `json:"timestamp" validate:"required"`
+	Payload   json.RawMessage `json:"payload" validate:"required"`
+}
+
+// VitalsData defines the heart rate, SpO2, and other health metrics from a smartwatch.
+type VitalsData struct {
+	HeartRate   int     `json:"heart_rate" validate:"gte=0,lte=250"`
+	SpO2        int     `json:"spo2" validate:"gte=0,lte=100"`
+	Steps       int     `json:"steps" validate:"gte=0"`
+	Temperature float64 `json:"temperature" validate:"gte=30,lte=45"`
+}
+
+// FallEvent defines the data for a detected fall.
+type FallEvent struct {
+	Confidence float64 `json:"confidence" validate:"gte=0,lte=1"`
+	Location   string  `json:"location"` // e.g., "living_room", "bathroom"
+}
+
+// Severity levels for anomalies and alerts.
+type Severity string
+
+const (
+	SeverityLow    Severity = "LOW"
+	SeverityMedium Severity = "MEDIUM"
+	SeverityHigh   Severity = "HIGH"
+)
+
+// AnomalyEvent represents a detected health or activity anomaly.
+type AnomalyEvent struct {
+	Severity Severity `json:"severity" validate:"oneof=LOW MEDIUM HIGH"`
+	Metric   string   `json:"metric" validate:"required"` // e.g., "heart_rate", "sleep_duration"
+	Message  string   `json:"message"`
+}
+
+// AlertState represents the state of an active alert in the system.
+type AlertState string
+
+const (
+	AlertStateTriggered AlertState = "TRIGGERED"
+	AlertStateVerifying AlertState = "VERIFYING"
+	AlertStateEscalated AlertState = "ESCALATED"
+	AlertStateResolved  AlertState = "RESOLVED"
+	AlertStateFalseAlarm AlertState = "FALSE_ALARM"
+)
+
+// Alert represents an entry in the alert state machine and escalation pipeline.
+type Alert struct {
+	AlertID      string     `json:"alert_id" gorm:"primaryKey"`
+	UserID       string     `json:"user_id" gorm:"index"`
+	CurrentState AlertState `json:"current_state"`
+	Severity     Severity   `json:"severity"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// Validation Helpers (to be expanded with a validator library if needed)
+
+func (e *BaseEvent) ToJSON() ([]byte, error) {
+	return json.Marshal(e)
+}
+
+func FromJSON[T any](data []byte) (T, error) {
+	var target T
+	err := json.Unmarshal(data, &target)
+	return target, err
+}
