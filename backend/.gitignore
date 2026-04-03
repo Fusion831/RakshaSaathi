@@ -1,1 +1,9 @@
 .env
+Data/
+*.csv
+*.npy
+*.pth
+__pycache__/
+.venv/
+*.exe
+

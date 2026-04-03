@@ -21,4 +21,3 @@ func NewPostgresDB(cfg *config.Config) (*gorm.DB, error) {
 	log.Println("Connected to PostgreSQL successfully")
 	return db, nil
 }
-

@@ -300,3 +300,112 @@ The primary value lies in:
 - Guaranteed response
 
 Everything else is secondary.
+
+# ML & Data Pipeline Context — LSTM Integration
+
+## 1. Overview
+
+The system incorporates an LSTM-based anomaly detection model to analyze physiological time-series data and detect deviations in user behavior.
+
+The ML service operates as an independent microservice integrated via NATS.
+
+---
+
+## 2. Dataset Strategy
+
+### Training Data
+
+* Use full dataset (e.g., PhysioNet)
+* Each patient treated as a sequence
+* Extract relevant signals:
+
+  * Heart Rate
+  * Temperature
+  * Respiratory Rate (optional)
+
+---
+
+## 3. Feature Augmentation
+
+To align with wearable capabilities, we augment the dataset with:
+
+* SpO₂ (simulated)
+* Activity (derived from HR + temporal patterns)
+* Acceleration (derived from activity)
+
+---
+
+## 4. Sequence Generation
+
+* Window size: 20 timesteps
+* Sliding window approach
+* Each sequence predicts next timestep
+
+---
+
+## 5. Training Pipeline
+
+1. Load dataset
+2. Clean missing values
+3. Normalize features
+4. Generate sequences
+5. Train LSTM model
+6. Save trained model (.pt)
+
+---
+
+## 6. Inference Pipeline
+
+1. Backend publishes vitals.updated
+2. ML service consumes event
+3. Retrieve recent sequence from Redis
+4. Normalize using user baseline
+5. Run LSTM prediction
+6. Compute prediction error
+7. Publish anomaly.detected
+
+---
+
+## 7. Personalization
+
+* Global model trained once
+* Each user has a baseline profile:
+
+  * mean and std per feature
+* Used to normalize inputs during inference
+
+---
+
+## 8. Integration with Backend
+
+### Event Flow:
+
+vitals.updated → ML Service → anomaly.detected → Alert Engine
+
+---
+
+## 9. Justification
+
+LSTM is chosen because:
+
+* captures temporal dependencies
+* detects sequence-level anomalies
+* works well with time-series physiological data
+
+---
+
+## 10. System Benefits
+
+* Real-time anomaly detection
+* Personalized monitoring
+* Reduced false positives via temporal modeling
+* Scalable architecture (decoupled ML service)
+
+---
+
+## 11. Future Enhancements
+
+* Online learning
+* Adaptive thresholds
+* Multi-modal fusion (vision + vitals)
+* Federated personalization

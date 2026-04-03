@@ -37,8 +37,22 @@ def parse_physionet_file(file_path):
         vitals_df['Parameter'] = vitals_df['Parameter'].map(WEARABLE_FEATURES)
         
         # Pivot to wide format (Time vs Parameters)
-        # Note: Multiple readings at same time might exist, we'll take the mean
-        pivoted = vitals_df.pivot_table(index='Time', columns='Parameter', values='Value', aggfunc='mean').reset_index()
+        pivoted = vitals_df.pivot_table(index='Time', columns='Parameter', values='Value', aggfunc='mean')
+        
+        # --- NEW: High-Frequency Temporal Interpolation ---
+        # Convert 'HH:MM' to total minutes for resampling
+        pivoted.index = pd.to_timedelta(pivoted.index + ':00').total_seconds() / 60
+        
+        # Reindex to every 1 minute to ensure sequences are "closer together" 
+        # and patterns are smoother for the LSTM to learn.
+        all_minutes = np.arange(0, pivoted.index.max() + 1, 1)
+        pivoted = pivoted.reindex(all_minutes)
+        
+        # Interpolate linearly for vital continuity
+        pivoted = pivoted.interpolate(method='linear', limit_direction='both')
+        # --------------------------------------------------
+
+        pivoted = pivoted.reset_index().rename(columns={'index': 'Time'})
         
         # Add static data
         for k, v in static_data.items():

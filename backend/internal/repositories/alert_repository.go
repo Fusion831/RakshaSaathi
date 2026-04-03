@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/Fusion831/RakshaSaathi/internal/models"
+	"github.com/redis/go-redis/v9"
 )
 
 type AlertRepository struct {
@@ -86,4 +86,3 @@ func (r *AlertRepository) DeleteAlertState(ctx context.Context, alertID string) 
 	key := r.buildKey(alertID)
 	return r.rdb.Del(ctx, key).Err()
 }
-

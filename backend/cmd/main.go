@@ -12,6 +12,7 @@ import (
 	"github.com/Fusion831/RakshaSaathi/internal/nats"
 	"github.com/Fusion831/RakshaSaathi/internal/repositories"
 	"github.com/Fusion831/RakshaSaathi/internal/services"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	corenats "github.com/nats-io/nats.go"
 )
@@ -46,9 +47,11 @@ func main() {
 	wsBroadcaster := services.NewWSBroadcaster()
 	go wsBroadcaster.Start()
 
+	mlService := services.NewMLInferenceService(vitalsRepo, "http://127.0.0.1:8000") // FastAPI URL
+
 	engine := services.NewAlertEngine(alertRepo, vitalsRepo, wsBroadcaster, natsMgr.JS, rdb)
 	alertService := services.NewAlertService(db, alertRepo)
-	vitalsProcessor := services.NewVitalsProcessor(vitalsRepo, wsBroadcaster)
+	vitalsProcessor := services.NewVitalsProcessor(vitalsRepo, wsBroadcaster, mlService)
 	aggregator := services.NewVitalsAggregator(vitalsRepo, db, 5*time.Minute)
 
 	// 5.1 Run Vitals Migrations
@@ -65,6 +68,9 @@ func main() {
 
 	// 8. Setup HTTP server
 	r := gin.Default()
+
+	// Enable CORS for frontend integration
+	r.Use(cors.Default())
 
 	r.GET("/health", h.HealthCheck)
 	r.GET("/ws", h.HandleWebSocket)

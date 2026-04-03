@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/nats-io/nats.go"
 	"github.com/Fusion831/RakshaSaathi/internal/config"
 	"github.com/Fusion831/RakshaSaathi/internal/models"
+	"github.com/nats-io/nats.go"
 )
 
 type JetStreamManager struct {
@@ -107,4 +107,3 @@ func (m *JetStreamManager) SubscribeDurable(subject, durableName string, handler
 func (m *JetStreamManager) Close() {
 	m.Conn.Close()
 }
-

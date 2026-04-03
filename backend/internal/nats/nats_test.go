@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go"
 	"github.com/Fusion831/RakshaSaathi/internal/config"
 	"github.com/Fusion831/RakshaSaathi/internal/models"
+	"github.com/nats-io/nats.go"
 )
 
 // NOTE: These tests require a running NATS server at nats://localhost:4222
@@ -27,9 +27,9 @@ func TestJetStreamManager_PublishAndSubscribe(t *testing.T) {
 
 	subject := "vitals.updated"
 	durable := "test_consumer"
-	
+
 	msgChan := make(chan *nats.Msg, 1)
-	
+
 	_, err = mgr.SubscribeDurable(subject, durable, func(m *nats.Msg) {
 		msgChan <- m
 		m.Ack()
@@ -57,4 +57,3 @@ func TestJetStreamManager_PublishAndSubscribe(t *testing.T) {
 		t.Fatal("Timed out waiting for message")
 	}
 }
-

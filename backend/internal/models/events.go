@@ -16,10 +16,11 @@ type BaseEvent struct {
 
 // VitalsData defines the heart rate, SpO2, and other health metrics from a smartwatch.
 type VitalsData struct {
-	HeartRate   int     `json:"heart_rate" validate:"gte=0,lte=250"`
-	SpO2        int     `json:"spo2" validate:"gte=0,lte=100"`
+	HeartRate   float64 `json:"heart_rate" validate:"gte=0,lte=250"`
+	SpO2        float64 `json:"spo2" validate:"gte=0,lte=100"`
 	Steps       int     `json:"steps" validate:"gte=0"`
 	Temperature float64 `json:"temperature" validate:"gte=30,lte=45"`
+	SleepStatus int     `json:"sleep_status" validate:"gte=0,lte=3"` // 0: Awake, 1: Light, 2: Deep, 3: REM
 }
 
 // FallEvent defines the data for a detected fall.

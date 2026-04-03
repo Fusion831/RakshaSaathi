@@ -15,42 +15,53 @@ def augment_data():
     df = pd.read_csv(INPUT_FILE)
     
     # 1. Synthesize SpO2 (Oxygen Saturation)
-    # Normal is 95-100. Lower values correlate slightly with high heart rate or low temp (distress).
-    print("Augmenting SpO2...")
+    print("Augmenting SpO2 with noise...")
     n_rows = len(df)
     
-    # Base SpO2 around 98%
-    spo2_base = np.random.normal(98, 1, n_rows)
+    # Base SpO2 around 98% + High-Freq Noise (Simulate sensor jitter)
+    spo2_base = np.random.normal(98, 0.5, n_rows) + np.random.uniform(-0.5, 0.5, n_rows)
     
-    # Add dependency: If HR > 150, drop SpO2 slightly to simulate distress
-    hr_distress = df['heart_rate'] > 150
-    spo2_base[hr_distress] -= np.random.uniform(2, 5, sum(hr_distress))
+    # Break correlations: Add random "dips" that ARE NOT linked to HR
+    # This prevents the model from just learning SpO2 = f(HR)
+    random_dip_idx = np.random.choice(n_rows, int(n_rows * 0.02), replace=False)
+    spo2_base[random_dip_idx] -= np.random.uniform(5, 10, len(random_dip_idx))
     
     df['spo2'] = np.clip(spo2_base, 70, 100)
 
     # 2. Synthesize Activity (Steps/Motion)
-    # Most wearables report activity as a categorical or magnitude value.
-    # 0: Sedentary, 1: Light, 2: Active, 3: High
-    print("Augmenting Activity & Acceleration...")
+    print("Augmenting Activity with random volatility...")
     
-    # Logic: Higher HR generally means higher activity
+    # Logic: Higher HR generally means higher activity, but add jitter
     activity = np.zeros(n_rows)
-    hr = df['heart_rate'].fillna(75) # Default to resting for logic
+    hr = df['heart_rate'].fillna(75)
     
-    activity[(hr > 100) & (hr <= 130)] = 1 # Light
-    activity[(hr > 130) & (hr <= 160)] = 2 # Active
-    activity[hr > 160] = 3                 # High
+    activity[(hr > 100) & (hr <= 130)] = 1 
+    activity[(hr > 130) & (hr <= 160)] = 2
+    activity[hr > 160] = 3                 
     
-    # Add some randomness (e.g., high HR but no move = stress/medical anomaly)
-    # We'll leave 10% as "mismatch" to help the LSTM learn anomalies
-    mismatch_idx = np.random.choice(n_rows, int(n_rows * 0.05), replace=False)
-    activity[mismatch_idx] = 0 
+    # Random Volatility: Person stops/starts abruptly regardless of HR
+    volatility_idx = np.random.choice(n_rows, int(n_rows * 0.1), replace=False)
+    activity[volatility_idx] = np.random.randint(0, 4, len(volatility_idx))
     
     df['activity'] = activity
 
     # 3. Synthesize Acceleration Magnitude
-    # Simple magnitude of (x,y,z) sensor
-    df['acceleration'] = np.clip(activity * 2.1 + np.random.normal(0.5, 0.2, n_rows), 0, 15)
+    # Add heavy Gaussian noise to simulate real-world wrist movement
+    noise = np.random.normal(0, 1.5, n_rows)
+    df['acceleration'] = np.clip(activity * 2.1 + 0.5 + noise, 0, 15)
+
+    # 4. Synthesize Sleep Status (Categorical Mock)
+    # 0 = Awake, 1 = Light, 2 = Deep, 3 = REM
+    print("Augmenting Sleep Status (Mock)...")
+    sleep_status = np.zeros(n_rows)
+    # Simple logic: If HR is low (< 65) and Activity is 0, high probability of sleep
+    potential_sleep = (hr < 65) & (activity == 0)
+    sleep_status[potential_sleep] = np.random.choice([1, 2, 3], size=np.sum(potential_sleep), p=[0.5, 0.3, 0.2])
+    df['sleep_status'] = sleep_status
+
+    # 5. Final Jitter on HR and Temp (Noisy Sensors)
+    df['heart_rate'] += np.random.normal(0, 1.0, n_rows)
+    df['temperature'] += np.random.normal(0, 0.1, n_rows)
 
     # Save augmented dataset
     df.to_csv(AUGMENTED_FILE, index=False)
