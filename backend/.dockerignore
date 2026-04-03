@@ -1,0 +1,58 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+vendor/
+node_modules/
+
+# Build artifacts
+bin/
+obj/
+dist/
+build/
+
+# Test files
+*_test.go
+*.test
+coverage.out
+*.prof
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Documentation
+*.md
+README.md
+
+# Docker files (don't need in image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Development
+Makefile
+scripts/

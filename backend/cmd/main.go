@@ -79,6 +79,7 @@ func main() {
 	r.POST("/event", h.PostEvent)
 	r.GET("/alerts/:id", h.GetAlertDetails)
 	r.POST("/alerts/:id/acknowledge", h.AcknowledgeAlert)
+	r.GET("/alerts/user/:userId", h.GetUserAlertHistory)
 
 	// 8. Start server
 	log.Printf("Starting RakshaSaathi server on port %s", cfg.Port)

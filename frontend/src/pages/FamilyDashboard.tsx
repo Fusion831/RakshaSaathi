@@ -8,17 +8,33 @@ import { MedicationList } from '../components/family/MedicationList';
 import { ActivityTimeline } from '../components/family/ActivityTimeline';       
 import { AIInsights } from '../components/family/AIInsights';
 import { EmergencyAlertModal } from '../components/family/EmergencyAlertModal'; 
+import { AnomalyModal } from '../components/family/AnomalyModal';
 import { WarningToast } from '../components/family/WarningToast';
 import { Tabs } from '../components/ui/Tabs';
 import { EmergencyContacts } from '../components/family/EmergencyContacts';     
 import { TrendsSection } from '../components/family/TrendsSection';
+import { DemoButton } from '../components/family/DemoButton';
+import { AlertHistory } from '../components/family/AlertHistory';
 import { Activity } from 'lucide-react';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 export default function FamilyDashboard() {
   const [criticalAlert, setCriticalAlert] = useState<any>(null);
   const [warningAlert, setWarningAlert] = useState<any>(null);
+  const [anomalyAlert, setAnomalyAlert] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("Overview");
+  const [showAlertHistory, setShowAlertHistory] = useState(false);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoProcess, setDemoProcess] = useState<any>(null);
+  const [liveVitals, setLiveVitals] = useState({
+    heartRate: 76,
+    spO2: 98,
+    steps: 2450,
+    skinTemp: 36.6,
+    sleepHours: 6.5,
+    activity: 0
+  });
+  const [liveAlerts, setLiveAlerts] = useState<any[]>([]);
 
   // Integration: Connect to Go Backend WebSocket
   const { messages, isConnected } = useWebSocket("ws://localhost:8080/ws");
@@ -27,6 +43,34 @@ export default function FamilyDashboard() {
     if (messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       console.log("WS Event Recieved:", lastMessage);
+
+      // Update live vitals from WebSocket stream
+      if (lastMessage.type === "vitals.live" && lastMessage.payload) {
+        setLiveVitals(prev => ({
+          heartRate: lastMessage.payload.vitals?.heart_rate || prev.heartRate,
+          spO2: lastMessage.payload.vitals?.blood_oxygen || prev.spO2,
+          steps: lastMessage.payload.vitals?.steps || prev.steps,
+          skinTemp: lastMessage.payload.vitals?.body_temperature || prev.skinTemp,
+          sleepHours: prev.sleepHours,
+          activity: lastMessage.payload.vitals?.activity_level || prev.activity
+        }));
+      }
+
+      // Handle alert events
+      if (lastMessage.type === "alert.created" || lastMessage.type === "alert.escalated" || lastMessage.type === "anomaly.detected") {
+        const newAlert = {
+          id: lastMessage.payload?.alert_id || "alert-" + Date.now(),
+          title: lastMessage.type === "alert.escalated" ? "Alert Escalated" : lastMessage.type === "anomaly.detected" ? "Anomaly Detected" : "New Alert",
+          description: lastMessage.payload?.message || lastMessage.payload?.description || "A new alert has been triggered.",
+          severity: lastMessage.payload?.severity === "HIGH" || lastMessage.payload?.severity === "CRITICAL" ? "critical" : lastMessage.type === "anomaly.detected" ? "warning" : "warning",
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: "new",
+          state: lastMessage.payload?.state,
+          type: lastMessage.type
+        };
+        setLiveAlerts(prev => [newAlert, ...prev].slice(0, 10)); // Keep last 10 alerts
+        console.log("Alert added to panel:", newAlert);
+      }
 
       // Handle Backend Events Mapping to Frontend Modals
       if (lastMessage.type === "fall.detected" || lastMessage.type === "alert.escalated" || lastMessage.type === "sos.triggered") {
@@ -40,13 +84,26 @@ export default function FamilyDashboard() {
       }
       
       if (lastMessage.type === "anomaly.detected") {
-        setWarningAlert({
+        setAnomalyAlert({
           type: "Anomaly Detected",
+          metric: lastMessage.payload?.metric || "Unknown",
+          severity: lastMessage.payload?.severity || "MEDIUM",
+          message: lastMessage.payload?.message || "Abnormal vital patterns detected",
           patient: patientData.name,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          description: "System flagged abnormal vital patterns."
+          description: lastMessage.payload?.message || "System flagged abnormal vital patterns."
         });
-        setTimeout(() => setWarningAlert(null), 8000);
+        // Also add to alerts panel
+        const newAlert = {
+          id: "anomaly-" + Date.now(),
+          title: "Anomaly Detected - " + (lastMessage.payload?.metric || "Unknown"),
+          description: lastMessage.payload?.message || "Anomaly detected",
+          severity: lastMessage.payload?.severity === "HIGH" ? "critical" : "warning",
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: "new",
+          type: "anomaly"
+        };
+        setLiveAlerts(prev => [newAlert, ...prev].slice(0, 10));
       }
     }
   }, [messages]);
@@ -101,6 +158,35 @@ export default function FamilyDashboard() {
     } catch(e) {
       console.error(e);
     }
+  };
+
+  const handleStartDemo = async () => {
+    setDemoRunning(true);
+    console.log("Starting Live Demo Mode...");
+    // In a browser environment, we would need WebWorker or backend endpoint
+    // For now, show UI feedback
+  };
+
+  const handleStopDemo = () => {
+    setDemoRunning(false);
+    console.log("Stopping Live Demo Mode...");
+  };
+
+  const handleAcknowledgeAlert = async (alertId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8080/alerts/${alertId}/acknowledge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      
+      if (response.ok) {
+        setCriticalAlert(null);
+        console.log("Alert acknowledged");
+      }
+    } catch (error) {
+      console.error("Failed to acknowledge alert:", error);
+    }
+  };
 
   const container: any = {
     hidden: { opacity: 0 },
@@ -118,9 +204,11 @@ export default function FamilyDashboard() {
   return (
     <>
       <EmergencyAlertModal alert={criticalAlert} onClose={() => setCriticalAlert(null)} />
+      <AnomalyModal alert={anomalyAlert} onClose={() => setAnomalyAlert(null)} />
       <WarningToast alert={warningAlert} onClose={() => setWarningAlert(null)} />
+      <AlertHistory userId="user-123" isOpen={showAlertHistory} onClose={() => setShowAlertHistory(false)} />
 
-      <motion.div variants={container} initial="hidden" animate="show" className="space-y-10 pb-10">
+      <motion.div variants={container} initial="hidden" animate="show" className="space-y-10 pb-10 pt-8">
         
         {/* Dynamic Header & Intelligent Tab System */}
         <motion.div variants={item} className="flex flex-col xl:flex-row xl:items-end justify-between gap-8 mb-6">
@@ -128,11 +216,25 @@ export default function FamilyDashboard() {
             <h1 className="text-[2.8rem] font-extrabold text-[#083B3C] tracking-tight drop-shadow-sm leading-none">Good morning, Family</h1>
             <p className="text-[#083B3C]/70 font-semibold tracking-wide mt-3 text-lg">Here is the latest health overview for <span className="font-bold text-[#083B3C]">{patientData.name}</span>.</p>
           </div>
-          <Tabs 
-            tabs={["Overview", "Trends", "Medications", "Alerts", "Insights"]} 
-            activeTab={activeTab} 
-            onChange={setActiveTab} 
-          />
+          <div className="flex flex-col gap-3">
+            <Tabs 
+              tabs={["Overview", "Trends", "Medications", "Alerts", "Insights"]} 
+              activeTab={activeTab} 
+              onChange={setActiveTab} 
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowAlertHistory(true)}
+                className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-semibold transition"
+              >
+                View History
+              </button>
+              <DemoButton 
+                onStartDemo={handleStartDemo}
+                onStopDemo={handleStopDemo}
+              />
+            </div>
+          </div>
         </motion.div>
 
         {/* Tab Routing Body */}
@@ -150,11 +252,11 @@ export default function FamilyDashboard() {
                   <SummaryCards patient={patientData} />
                   <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
                     <div className="xl:col-span-2 space-y-10 flex flex-col">
-                      <VitalsSnapshot vitals={patientData.vitals} />
+                      <VitalsSnapshot vitals={liveVitals} />
                       <EmergencyContacts /> 
                     </div>
                     <div className="space-y-10 flex flex-col">
-                      <AlertsPanel />
+                      <AlertsPanel alerts={liveAlerts} />
                       <ActivityTimeline />
                     </div>
                   </div>
@@ -174,7 +276,7 @@ export default function FamilyDashboard() {
              )}
 
              {activeTab === "Alerts" && (
-                <div className="max-w-[1000px] mx-auto"><AlertsPanel /></div>
+                <div className="max-w-[1000px] mx-auto"><AlertsPanel alerts={liveAlerts} /></div>
              )}
 
              {activeTab === "Insights" && (

@@ -98,6 +98,24 @@ func (h *Handler) AcknowledgeAlert(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "alert acknowledged and resolved"})
 }
 
+// GetUserAlertHistory returns alert history for a specific user
+func (h *Handler) GetUserAlertHistory(c *gin.Context) {
+	userID := c.Param("userId")
+
+	// Get alerts from database
+	alerts, err := h.alertService.GetAlertHistory(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch alert history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user_id": userID,
+		"alerts":  alerts,
+		"count":   len(alerts),
+	})
+}
+
 func (h *Handler) HandleWebSocket(c *gin.Context) {
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {

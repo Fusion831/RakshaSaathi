@@ -56,7 +56,7 @@ func NewJetStreamManager(cfg *config.Config) (*JetStreamManager, error) {
 func (m *JetStreamManager) setupStreams() error {
 	// Define the RAKSHASAATHI stream to capture all relevant events
 	streamName := "RAKSHASAATHI"
-	subjects := []string{"fall.detected", "vitals.updated", "anomaly.detected", "alert.*"}
+	subjects := []string{"fall.detected", "vitals.updated", "anomaly.detected", "sos.triggered", "alert.*"}
 
 	_, err := m.JS.StreamInfo(streamName)
 	if err != nil {
@@ -70,7 +70,17 @@ func (m *JetStreamManager) setupStreams() error {
 			return fmt.Errorf("failed to create stream: %w", err)
 		}
 	} else {
-		log.Printf("Stream %s already exists", streamName)
+		// Update stream to include any new subjects like sos.triggered
+		_, err = m.JS.UpdateStream(&nats.StreamConfig{
+			Name:     streamName,
+			Subjects: subjects,
+			Storage:  nats.FileStorage,
+		})
+		if err != nil {
+			log.Printf("Stream %s already exists, but failed to update subjects: %v", streamName, err)
+		} else {
+			log.Printf("Stream %s subjects updated successfully", streamName)
+		}
 	}
 	return nil
 }

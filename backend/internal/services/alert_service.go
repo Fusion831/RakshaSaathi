@@ -51,4 +51,27 @@ func (s *AlertService) ResolveAlert(ctx context.Context, id string, finalState m
 	return s.repo.DeleteAlertState(ctx, id)
 }
 
+// GetAlertHistory retrieves alert history for a user from PostgreSQL
+func (s *AlertService) GetAlertHistory(ctx context.Context, userID string) ([]models.Alert, error) {
+	var alerts []models.Alert
+
+	if s.db == nil {
+		return alerts, nil // No database configured
+	}
+
+	// Fetch last 100 alerts for user, ordered by timestamp desc
+	err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("timestamp DESC").
+		Limit(100).
+		Find(&alerts).Error
+
+	if err != nil {
+		log.Printf("Failed to fetch alert history for user %s: %v", userID, err)
+		return []models.Alert{}, nil
+	}
+
+	return alerts, nil
+}
+
 // Logic for alert state machine will go here
