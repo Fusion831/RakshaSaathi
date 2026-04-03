@@ -43,7 +43,7 @@ func TestVitalsData_Unmarshall(t *testing.T) {
 	}
 
 	if vitals.HeartRate != 80 {
-		t.Errorf("Expected HeartRate 80, got %d", vitals.HeartRate)
+		t.Errorf("Expected HeartRate 80, got %f", vitals.HeartRate)
 	}
 
 	if vitals.Temperature != 36.5 {

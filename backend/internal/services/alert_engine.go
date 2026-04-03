@@ -47,10 +47,63 @@ func (e *AlertEngine) HandleEvent(ctx context.Context, event models.BaseEvent) e
 		return nil
 	}
 
-	// 2. Logic for Fall Detection
-	if event.Type == "fall.detected" {
+	// 2. Event Routing
+	switch event.Type {
+	case "fall.detected":
 		return e.initiateFallAlert(ctx, event)
+	case "anomaly.detected":
+		return e.initiateAnomalyAlert(ctx, event)
+	case "sos.triggered":
+		return e.initiateSOSAlert(ctx, event)
 	}
+
+	return nil
+}
+
+func (e *AlertEngine) initiateAnomalyAlert(ctx context.Context, event models.BaseEvent) error {
+	alertID := fmt.Sprintf("alert:%s:%d", event.UserID, time.Now().Unix())
+
+	alert := &models.Alert{
+		AlertID:         alertID,
+		UserID:          event.UserID,
+		CurrentState:    models.AlertStateWaitingConfirmation,
+		Severity:        models.SeverityMedium,
+		IncidentContext: event.Payload,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	err := e.repo.SetAlertState(ctx, alert, 30*time.Second)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("New Anomaly Alert initiated: %s for user %s", alertID, event.UserID)
+	e.ws.BroadcastEvent("anomaly.detected", alert)
+
+	return nil
+}
+
+func (e *AlertEngine) initiateSOSAlert(ctx context.Context, event models.BaseEvent) error {
+	alertID := fmt.Sprintf("alert:%s:%d", event.UserID, time.Now().Unix())
+
+	alert := &models.Alert{
+		AlertID:         alertID,
+		UserID:          event.UserID,
+		CurrentState:    models.AlertStateLevel3Alert, // Instant Critical Escalation
+		Severity:        models.SeverityHigh,
+		IncidentContext: event.Payload,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	err := e.repo.SetAlertState(ctx, alert, 30*time.Second)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("SOS Alert triggered: %s for user %s", alertID, event.UserID)
+	e.ws.BroadcastEvent("sos.triggered", alert)
 
 	return nil
 }

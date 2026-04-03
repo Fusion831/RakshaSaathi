@@ -150,5 +150,25 @@ func startConsumers(mgr *nats.JetStreamManager, engine *services.AlertEngine, vi
 		log.Printf("Failed to subscribe to anomaly.detected: %v", err)
 	}
 
-	log.Println("NATS Durable Consumers started for fall and anomalies")
+	// Consumer for SOS
+	_, err = mgr.SubscribeDurable("sos.triggered", "sos_processor", func(m *corenats.Msg) {
+		var event models.BaseEvent
+		if err := json.Unmarshal(m.Data, &event); err != nil {
+			log.Printf("Error unmarshaling sos event: %v", err)
+			m.Term()
+			return
+		}
+
+		if err := engine.HandleEvent(ctx, event); err != nil {
+			log.Printf("Error handling sos event: %v", err)
+			m.Nak()
+			return
+		}
+		m.Ack()
+	})
+	if err != nil {
+		log.Printf("Failed to subscribe to sos.triggered: %v", err)
+	}
+
+	log.Println("NATS Durable Consumers started for fall, anomalies, and SOS")
 }

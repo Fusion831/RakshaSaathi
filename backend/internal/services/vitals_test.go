@@ -21,9 +21,10 @@ func TestVitalsProcessor_ProcessVitals(t *testing.T) {
 
 	repo := repositories.NewVitalsRepository(rdb)
 	ws := NewWSBroadcaster()
+	mlService := NewMLInferenceService(repo, "http://localhost:8000") // Mock or actual endpoint
 	// No need to start WS for unit test since we just want to see if it doesn't crash on broadcast
 
-	processor := NewVitalsProcessor(repo, ws)
+	processor := NewVitalsProcessor(repo, ws, mlService)
 
 	userID := "test_user_vitals"
 	vitals := models.VitalsData{HeartRate: 75, SpO2: 98}
@@ -51,7 +52,7 @@ func TestVitalsProcessor_ProcessVitals(t *testing.T) {
 	if len(stored) != 1 {
 		t.Errorf("Expected 1 stored vital, got %d", len(stored))
 	} else if stored[0].HeartRate != 75 {
-		t.Errorf("Expected HR 75, got %d", stored[0].HeartRate)
+		t.Errorf("Expected HR 75, got %f", stored[0].HeartRate)
 	}
 }
 
