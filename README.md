@@ -6,6 +6,13 @@
 
 RakshaSaathi is a **distributed, real-time monitoring system** built to safeguard elderly individuals through intelligent health anomaly detection and immediate emergency response. Unlike passive dashboard systems, this is an **active response system** that continuously monitors vital signs, detects critical events, and triggers appropriate escalation protocols.
 
+**Benchmark Screenshots**
+
+- ![NATS Throughput](Benchmark/NATSTerminal.png)
+- ![PyTorch Inference](Benchmark/PyTorchBenchmark.png)
+- ![End-to-End Test](Benchmark/E2ETesting.png)
+- ![Backpressure Test](Benchmark/BackPressureTesting.png)
+
 **Key Capabilities:**
 - ✅ **Real-Time Fall Detection** - Identifies falls with 95%+ confidence
 - ✅ **Vital Signs Anomaly Detection** - Detects abnormal heart rate, blood oxygen, temperature patterns
@@ -673,5 +680,16 @@ Monitor these key metrics in production:
 - WebSocket connection stability
 
 ---
+
+**Performance Benchmarks**
+
+- **Messaging:** NATS JetStream sustained ~6.3M msgs/sec with microsecond-level latencies, showing the messaging layer is not a system bottleneck.
+- **ML Inference:** Isolated Edge LSTM inference averaged ~170 µs per event (negligible compute cost).
+- **End-to-End Pipeline:** Under controlled delay conditions the full pipeline produced an average latency of ~3.5 s and throughput of ~700 events/sec — performance is primarily constrained by orchestration overhead, I/O operations, and queueing effects rather than compute or messaging.
+- **Backpressure / Robustness:** When ML latency was artificially increased the system produced expected queue buildup but no data loss, validating the event-driven design and durable queueing.
+
+Results screenshot:
+
+![E2E & Backpressure Results](Benchmark/NATSTerminal.png)
 
 **Built with ❤️ for elderly safety and peace of mind.**
