@@ -1,10 +1,10 @@
-# RakshaSaathi
+﻿# RakshaSaathi
 
 **Real-time health monitoring for seniors living independently—combining event-driven architecture with intelligent anomaly detection.**
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ![Architecture Diagram](Benchmark/architecture.png)
 
@@ -18,7 +18,7 @@ Device Layer → Go Backend API → NATS JetStream → Worker Processors → Ale
 
 ---
 
-## 📊 Benchmarks
+## Benchmarks
 
 | Metric | Result |
 |--------|--------|
@@ -34,7 +34,7 @@ See `/Benchmark/benchmarks.md` for detailed breakdown.
 
 ---
 
-## 🎯 The Problem
+## The Problem
 
 Elderly individuals living alone face delayed emergency response during falls and medical crises. Most solutions require expensive hardware, constant surveillance, or can't handle real-time speed.
 
@@ -42,9 +42,9 @@ RakshaSaathi proves that thoughtful event-driven design can create a system that
 
 ---
 
-## ✅ Key Features
+## Key Features
 
-- **Real-Time Fall Detection** (95%+ confidence)
+- **Real-Time Anomaly Detection** (95%+ confidence)
 - **Continuous Vitals Monitoring** (HR, SpO2, Temperature, Activity)
 - **ML-Powered Anomaly Detection** (LSTM-based)
 - **Intelligent Escalation** (30-second windows, state machine)
@@ -80,30 +80,32 @@ User presses button → Immediate Level 3 alert → Sub-10ms notification → Fa
 
 ---
 
-## 🧠 Design Rationale
+## Engineering & Design Rationale
 
-**Why NATS JetStream?** Handles burst traffic, enables replay on crashes, decouples components.
+**NATS JetStream for Resilient Messaging:** 
+NATS JetStream was chosen for its minimal footprint and high throughput. It handles sudden spikes in telemetry traffic without dropping events. By using manual acknowledgments, we get at-least-once delivery and the ability to replay events after service restarts. This means no critical health alerts get lost if a consumer crashes.
 
-**Why Concurrent Workers?** Different event types process in parallel—no blocking.
+**Go Concurrent Worker Pools:** 
+Instead of processing events serially, we use independent domain workers to handle different event streams in parallel. If there's a huge spike in vitals ingestion, it doesn't block the alert engine from immediately processing an SOS trigger. This keeps our worst-case latencies low.
 
-**Why Async ML?** Inference runs in goroutines without blocking real-time ingestion.
+**Asynchronous ML Pipelines:** 
+Running machine learning inference (our PyTorch LSTM) takes time and introduces latency. By offloading inference calls to non-blocking goroutines that talk to a separate FastAPI microservice, the core telemetry ingestion loop is never blocked. The system can sustain hundreds of events per second even if the ML API slows down.
 
-**Why Redis + PostgreSQL?** Redis for speed (recent vitals, alerts), PostgreSQL for history and analytics.
-
----
-
-## 📈 Key Learnings
-
-- Event-driven systems scale under burst traffic
-- Async pipelines require careful idempotency handling
-- Backpressure management is critical at scale
-- Decoupled messaging improves resilience
-- State machines work well for escalation
-- Hot/cold storage separation reduces expensive queries
+**Dual-Tier Storage (Redis + PostgreSQL):** 
+Real-time dashboards need instant access to recent health data. We use Redis as a hot cache for active alerts, idempotency checks, and live vitals. For historical data, a background worker batches and downsamples the high-frequency stream into PostgreSQL (turning hundreds of readings into single 1-minute statistical rollups). This gives us a permanent audit trail for analytics without putting load on the real-time path.
 
 ---
 
-## 🚀 Future Improvements
+## Key Engineering Learnings
+
+- **Idempotency is Non-Negotiable:** With at-least-once delivery, network hiccups mean consumers occasionally process duplicate events. Moving to strict idempotency using Redis TTL keys (`processed:{event_id}`) was necessary to guarantee emergency alerts don't trigger twice and spam users.
+- **Backpressure & Queue Management:** When simulating slow ML inference, the messaging queues back up fast. Explicit `Ack/Nak` handling became critical for rejecting messages back to JetStream, keeping memory usage stable and preventing OOM crashes during traffic spikes.
+- **State Machines for Escalation:** Alert escalation logic can easily turn into spaghetti code. Building a strict state machine (`WAITING_CONFIRMATION` → `LEVEL_1` → `LEVEL_2`) made the transitions deterministic and easy to audit, completely removing the need for nested if-else chains.
+- **Cost of Time-Series Queries:** Writing sub-second telemetry directly into a relational DB while also querying windowed averages creates an immediate bottleneck. The background downsampling worker showed how important it is to separate high-frequency writes from long-term analytical storage in time-series workloads.
+
+---
+
+## Future Improvements
 - Fall Detection Model
 - Parallel Custom Phone Calling System
 - OpenTelemetry + distributed tracing
@@ -195,7 +197,7 @@ Purpose: Get alert details
 
 ---
 
-## 🐳 Docker Deployment
+## Docker Deployment
 
 ### Local Development
 ```bash
@@ -219,7 +221,7 @@ environment:
 
 ---
 
-## � Performance Characteristics
+## Performance Characteristics
 
 | Metric | Target | Achieved |
 |--------|--------|----------|
@@ -241,7 +243,7 @@ Results screenshot:
 
 ---
 
-## 🛠️ Development Workflow
+## Development Workflow
 
 ### Adding a New Event Type
 
@@ -286,7 +288,7 @@ if (lastMessage.type === "custom.event") {
 
 ---
 
-## 🔐 Security Considerations
+## Security Considerations
 
 **Implemented:**
 - ✅ Input validation on all API endpoints
@@ -305,7 +307,7 @@ if (lastMessage.type === "custom.event") {
 
 ---
 
-## 🚢 Next Steps & Integration
+## Next Steps & Integration
 
 ### Immediate Priorities
 1. **Integration with Existing Healthcare Solutions**
@@ -329,34 +331,17 @@ if (lastMessage.type === "custom.event") {
 
 ---
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## 👥 Contributing
 
-Contributions are welcome! Please follow these guidelines:
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes with clear messages
-4. Push to branch
-5. Open a Pull Request
 
 ---
 
-## 📞 Support & Questions
-
-For technical questions or issues:
-1. Check existing documentation in `/backend` and `/frontend`
-2. Review API endpoints section above
-3. Check Docker logs: `docker-compose logs -f`
-4. Enable debug mode: `GIN_MODE=debug go run cmd/main.go`
-
----
-
-## 📈 Metrics & Monitoring
+## Metrics & Monitoring
 
 Monitor these key metrics in production:
 - Alert creation rate (events/minute)
@@ -366,4 +351,3 @@ Monitor these key metrics in production:
 - Error rates by event type
 - WebSocket connection stability
 
-**Built with ❤️ for elderly safety and peace of mind.**
