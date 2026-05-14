@@ -1,12 +1,12 @@
 ﻿# RakshaSaathi
 
-**Real-time health monitoring for seniors living independently—combining event-driven architecture with intelligent anomaly detection.**
+**Real-time health monitoring for seniors living independently, combining event-driven architecture with intelligent anomaly detection.**
 
 ---
 
 ## System Architecture
 
-![Architecture Diagram](Benchmark/architecture.png)
+![Architecture Diagram](Benchmark/Architecture.png)
 
 **Core System Flow:**
 Device Layer → Go Backend API → NATS JetStream → Worker Processors → Alert Engine → Frontend
@@ -29,8 +29,6 @@ Device Layer → Go Backend API → NATS JetStream → Worker Processors → Ale
 | **SOS Response** | <10ms |
 | **WebSocket Updates** | <100ms |
 | **Backpressure Test** | 10k events, 50ms ML delay—zero loss |
-
-See `/Benchmark/benchmarks.md` for detailed breakdown.
 
 ---
 
