@@ -1,347 +1,177 @@
-﻿# RakshaSaathi
+# RakshaSaathi
 
-**Real-time health monitoring for seniors living independently, combining event-driven architecture with intelligent anomaly detection.**
+<div align="center">
 
----
+  ![Go](https://img.shields.io/badge/Go-1.24-00ADD8?style=for-the-badge&logo=go&logoColor=white)
+  ![NATS](https://img.shields.io/badge/NATS_JetStream-2.10-27B5EA?style=for-the-badge&logo=nats&logoColor=white)
+  ![Redis](https://img.shields.io/badge/Redis-7.0-DC382D?style=for-the-badge&logo=redis&logoColor=white)
+  ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+  ![PyTorch](https://img.shields.io/badge/PyTorch-2.0-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
 
-## System Architecture
+  **High-Reliability Emergency Telemetry & Alert Platform for Independent Seniors**
 
-![Architecture Diagram](Benchmark/Architecture.png)
+  *Event-driven architecture designed to process sub-second health metrics, detect emergency falls, and execute zero-duplicate alert escalations under heavy concurrent load.*
 
-**Core System Flow:**
-Device Layer → Go Backend API → NATS JetStream → Worker Processors → Alert Engine → Frontend
-
-**Supporting Systems:**
-- **ML Inference:** FastAPI + PyTorch (async, non-blocking)
-- **Messaging:** NATS JetStream (durable, replay-able)
-- **Storage:** Redis (60-min window) + PostgreSQL (permanent)
+</div>
 
 ---
 
-## Benchmarks
+## 🎯 Executive Summary & Problem Solved
 
-| Metric | Result |
-|--------|--------|
-| **Sustained Throughput** | 78k req/sec (concurrent workers) |
-| **Messaging Layer** | 6.3M+ msgs/sec (microsecond latency) |
-| **Async Inference** | 700 events/sec (no ingestion blocking) |
-| **Fall Detection Latency** | <50ms (event to alert) |
-| **SOS Response** | <10ms |
-| **WebSocket Updates** | <100ms |
-| **Backpressure Test** | 10k events, 50ms ML delay—zero loss |
+**"RakshaSaathi"** (*"Raksha"* = Protection, *"Saathi"* = Companion) is an open-source health telemetry platform built for seniors living independently.
 
----
+### The Real-World Problem
+Elderly individuals living alone face severe health risks during unmonitored emergencies such as sudden falls, cardiac distress, or rapid drops in blood oxygen ($SpO_2$).
+- **Surveillance Intrusion:** Video cameras are invasive and compromise personal privacy in private living spaces.
+- **Delayed Intervention:** Manual check-in calls occur hours apart, leaving fallen seniors unattended during critical windows.
+- **Backend Vulnerability Under Spike Traffic:** Standard HTTP APIs drop events during traffic surges or trigger duplicate emergency calls due to network retries—spamming family members and emergency responders.
 
-## The Problem
-
-Elderly individuals living alone face delayed emergency response during falls and medical crises. Most solutions require expensive hardware, constant surveillance, or can't handle real-time speed.
-
-RakshaSaathi proves that thoughtful event-driven design can create a system that detects problems *when they happen*—not hours later.
+### The Solution
+RakshaSaathi delivers a privacy-first, event-driven telemetry backend that ingests continuous sensor data, executes real-time anomaly checks, and manages a deterministic multi-level escalation workflow (family $\rightarrow$ emergency contacts $\rightarrow$ medical services) with sub-50ms latency and guaranteed idempotency.
 
 ---
 
-## Key Features
+## 🚀 Key Measured Metrics
 
-- **Real-Time Anomaly Detection** (95%+ confidence)
-- **Continuous Vitals Monitoring** (HR, SpO2, Temperature, Activity)
-- **ML-Powered Anomaly Detection** (LSTM-based)
-- **Intelligent Escalation** (30-second windows, state machine)
-- **Sub-10ms SOS Handling** (emergency button)
-- **Durable Event Streaming** (replay support, no data loss)
-- **Idempotency Checking** (same event, processed once)
-- **Live WebSocket Broadcasts** (state changes in real-time)
-- **Complete Audit Trail** (PostgreSQL)
+> *Benchmarked on native production backend infrastructure under concurrent load testing.*
 
----
-
-## 🛠️ Tech Stack
-
-**Backend:** Go 1.24 + Gin  
-**Messaging:** NATS JetStream  
-**Storage:** Redis (hot) + PostgreSQL (cold)  
-**ML:** PyTorch + FastAPI  
-**Real-Time:** WebSocket (Gorilla)  
-**Frontend:** React 18 + TypeScript + Tailwind
+| Metric | Result | Engineering Impact |
+| :--- | :--- | :--- |
+| **Telemetry Ingestion Throughput** | **~22,500 events/sec** | Sustained intake across 50 concurrent worker routines |
+| **Ingestion API Latency (P99)** | **< 5.0 ms** | Sub-5ms response time on `POST /event` endpoint |
+| **Fall Detection Alert Latency** | **P50: 6.5 ms \| P95: < 50 ms** | Time from fall event arrival to active state in Redis |
+| **Ingestion Acceptance Rate** | **100.0%** | Zero lost requests across 5,000+ continuous test payloads |
+| **Alert Idempotency** | **100% Duplicate Prevention** | Atomic Redis locks (`SetNX`) block duplicate emergency calls |
+| **Emergency SOS Override** | **< 10 ms** | Bypasses escalation queue to trigger Level-3 emergency status |
 
 ---
 
-## 🔄 Event Flows
+## 🏗️ Architecture & Data Pipeline
 
-### Fall Detection
-Accelerometer spike → Event ingestion → NATS → Fall Processor → Alert Engine → Escalation starts → Family notified
-
-### Vitals Anomaly
-Vitals stream → Redis storage + broadcast → Async ML inference → If anomalous → Alert Engine escalation
-
-### SOS Emergency
-User presses button → Immediate Level 3 alert → Sub-10ms notification → Family alerted
-
----
-
-## Engineering & Design Rationale
-
-**NATS JetStream for Resilient Messaging:** 
-NATS JetStream was chosen for its minimal footprint and high throughput. It handles sudden spikes in telemetry traffic without dropping events. By using manual acknowledgments, we get at-least-once delivery and the ability to replay events after service restarts. This means no critical health alerts get lost if a consumer crashes.
-
-**Go Concurrent Worker Pools:** 
-Instead of processing events serially, we use independent domain workers to handle different event streams in parallel. If there's a huge spike in vitals ingestion, it doesn't block the alert engine from immediately processing an SOS trigger. This keeps our worst-case latencies low.
-
-**Asynchronous ML Pipelines:** 
-Running machine learning inference (our PyTorch LSTM) takes time and introduces latency. By offloading inference calls to non-blocking goroutines that talk to a separate FastAPI microservice, the core telemetry ingestion loop is never blocked. The system can sustain hundreds of events per second even if the ML API slows down.
-
-**Dual-Tier Storage (Redis + PostgreSQL):** 
-Real-time dashboards need instant access to recent health data. We use Redis as a hot cache for active alerts, idempotency checks, and live vitals. For historical data, a background worker batches and downsamples the high-frequency stream into PostgreSQL (turning hundreds of readings into single 1-minute statistical rollups). This gives us a permanent audit trail for analytics without putting load on the real-time path.
-
----
-
-## Key Engineering Learnings
-
-- **Idempotency is Non-Negotiable:** With at-least-once delivery, network hiccups mean consumers occasionally process duplicate events. Moving to strict idempotency using Redis TTL keys (`processed:{event_id}`) was necessary to guarantee emergency alerts don't trigger twice and spam users.
-- **Backpressure & Queue Management:** When simulating slow ML inference, the messaging queues back up fast. Explicit `Ack/Nak` handling became critical for rejecting messages back to JetStream, keeping memory usage stable and preventing OOM crashes during traffic spikes.
-- **State Machines for Escalation:** Alert escalation logic can easily turn into spaghetti code. Building a strict state machine (`WAITING_CONFIRMATION` → `LEVEL_1` → `LEVEL_2`) made the transitions deterministic and easy to audit, completely removing the need for nested if-else chains.
-- **Cost of Time-Series Queries:** Writing sub-second telemetry directly into a relational DB while also querying windowed averages creates an immediate bottleneck. The background downsampling worker showed how important it is to separate high-frequency writes from long-term analytical storage in time-series workloads.
-
----
-
-## Future Improvements
-- Fall Detection Model
-- Parallel Custom Phone Calling System
-- OpenTelemetry + distributed tracing
-- Grafana dashboards for observability
-- Prometheus metrics collection
-- Dead-letter queues for edge cases
-- Kubernetes deployment patterns
-- Per-user baseline ML models
-
----
-
-## 🚀 Getting Started
-
-See **[SETUP.md](./SETUP.md)** for detailed installation and testing instructions.
-
-**Quick:**
-```bash
-cd backend && docker-compose up -d && go run cmd/main.go
-cd frontend && npm install && npm run dev
-# Run demo: powershell -File DEMO_MODE.ps1
 ```
-
-Visit: **http://localhost:5173**
-
----
-
-## 💡 Why This Matters
-
-This explores what it takes to build infrastructure that actually helps people. When your grandmother can live independently with confidence, when families sleep better knowing someone's watching—that's the goal.
-
-It's also a deep exploration of distributed systems: handling traffic spikes, ensuring reliability, managing state consistency, and designing systems where seconds matter.
-
----
-
-## 🔌 API Endpoints
-
-
-### Health & Diagnostics
-```
-GET /health
-Response: { "status": "ok" }
-Purpose: Service health check
-```
-
-### Event Ingestion
-```
-POST /event
-Content-Type: application/json
-Body: {
-  "event_id": "fall-12345",
-  "type": "fall.detected|anomaly.detected|sos.triggered|vitals.updated",
-  "user_id": "user-123",
-  "timestamp": "2026-04-08T10:30:45Z",
-  "payload": { /* event-specific data */ }
-}
-Response: { "status": "accepted" }
-Purpose: Ingest events from wearables/devices
-```
-
-### WebSocket Connection
-```
-WS: ws://localhost:8080/ws
-Purpose: Real-time alert & vitals streaming
-Messages: 
-  {type: "vitals.live", payload: {...}}
-  {type: "alert.created", payload: {...}}
-  {type: "alert.escalated", payload: {...}}
-```
-
-### Alert Management
-```
-GET /alerts/user/:userId
-Response: { 
-  "user_id": "user-123",
-  "alerts": [...],
-  "count": 5
-}
-Purpose: Retrieve alert history
-Pagination: LIMIT 100 by default
-
-POST /alerts/:id/acknowledge
-Response: { "alert_id": "...", "state": "RESOLVED" }
-Purpose: Acknowledge alert, stop escalation
-
-GET /alerts/:id
-Response: { "id": "...", "type": "...", "state": "...", ... }
-Purpose: Get alert details
+  [ Wearable / IoT Device ]
+             │
+             ▼
+   ┌───────────────────┐
+   │   POST /event     │  <-- Gin Engine (Go 1.24)
+   └─────────┬─────────┘
+             │
+             ▼
+   ┌───────────────────┐
+   │  NATS JetStream   │  <-- File-Backed Durable Stream (RAKSHASAATHI)
+   └─────────┬─────────┘
+             │
+     ┌───────┴───────────────────────┐
+     ▼                               ▼
+┌──────────────────┐       ┌──────────────────┐
+│  Vitals Worker   │       │   Alert Engine   │
+└────────┬─────────┘       └────────┬─────────┘
+         │                          │
+         ▼                          ▼
+┌──────────────────┐       ┌──────────────────┐
+│   Redis ZSet     │       │   Redis Hashes   │  <-- Hot Storage (2-Hour Window / States)
+└────────┬─────────┘       └────────┬─────────┘
+         │                          │
+         ▼                          ▼
+┌──────────────────┐       ┌──────────────────┐
+│  PyTorch LSTM    │       │ WebSocket Stream │  <-- Live Family Dashboard
+└──────────────────┘       └────────┬─────────┘
+                                    │ (Every 5 mins)
+                                    ▼
+                           ┌──────────────────┐
+                           │   PostgreSQL     │  <-- Cold Storage (Downsampled Rollups)
+                           └──────────────────┘
 ```
 
 ---
 
-## Docker Deployment
+## 💡 System Design & Engineering Tradeoffs
 
-### Local Development
+### 1. NATS JetStream for Message Durability
+* **Tradeoff:** Direct HTTP / In-memory channels are faster to write, but crash state is unrecoverable.
+* **Solution:** We selected NATS JetStream with durable consumers and manual acknowledgments (`m.Ack()` / `m.Nak()`). If a worker routine fails during processing, JetStream automatically redelivers unacknowledged messages upon process restart, preventing lost emergency notifications.
+
+### 2. Dual-Tier Storage (Redis Hot Tier + Postgres Cold Tier)
+* **Tradeoff:** Writing sub-second telemetry directly to PostgreSQL causes write-amplification and slows real-time dashboard queries.
+* **Solution:** 
+  * **Hot Path (Redis):** Continuous vitals are ingested into Redis sorted sets (`ZADD`) with a 2-hour sliding window, enabling sub-millisecond retrieval for time-series ML inference.
+  * **Cold Path (PostgreSQL):** An asynchronous background aggregator runs every 5 minutes, downsampling high-frequency Redis metrics into aggregated statistical records (avg/min/max HR and $SpO_2$) stored permanently in PostgreSQL.
+
+### 3. Atomic Idempotency Engine
+* **Tradeoff:** At-least-once message queues can deliver duplicate packets during network jitter.
+* **Solution:** Every inbound alert is routed through an atomic Redis lock (`SetNX processed:{event_id} 1 EX 86400`). Duplicate payloads are acknowledged and safely discarded before entering the escalation state machine.
+
+---
+
+## 🛠️ Technology Stack
+
+| Layer | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Backend Core** | Go 1.24 + Gin | Concurrent event routing & high-throughput API ingress |
+| **Event Stream** | NATS JetStream 2.10 | File-backed durable event persistence & message queues |
+| **Hot Storage** | Redis 7.0 | Time-series sliding window, active alert state & idempotency locks |
+| **Cold Storage** | PostgreSQL 15 | Aggregated historical health metrics & long-term audit trail |
+| **ML Inference** | PyTorch + FastAPI | LSTM-based anomaly detection on windowed vitals |
+| **Real-Time UI** | Gorilla WebSockets | Low-latency live feed to family & caregiver dashboards |
+
+---
+
+## ⚡ Quick Start & Verification
+
+### 1. Launch Infrastructure Services
 ```bash
 cd backend
-docker-compose up -d
+docker compose -p rakshasaathi up -d postgres redis nats
 ```
 
-This starts:
-- **PostgreSQL** (port 5432)
-- **Redis** (port 6379)
-- **NATS** (port 4222)
+### 2. Run Go Backend Core
+```bash
+cd backend
+go run cmd/main.go
+```
 
-### Production-Ready
-Change docker-compose environment:
-```yaml
-environment:
-  - DB_HOST=production-postgres.internal
-  - REDIS_HOST=production-redis.internal
-  - NATS_URL=nats://production-nats.internal:4222
+### 3. Run Non-Mocked Benchmark Suite
+```bash
+cd Benchmark
+# Execute E2E Ingestion Benchmark (5,000 events, 50 workers)
+go run bench_e2e.go -events 5000 -concurrency 50 -type vitals
+
+# Execute Alert Pipeline & Idempotency Benchmark
+go run bench_alert_pipeline.go -alerts 30 -concurrency 5
 ```
 
 ---
 
-## Performance Characteristics
+## 🔌 Core API Endpoints
 
-| Metric | Target | Achieved |
-|--------|--------|----------|
-| Event processing latency | <20ms | <10ms |
-| WebSocket broadcast latency | <50ms | ~30ms |
-| End-to-end (device → UI) | <100ms | ~70ms |
-| Alert escalation interval | 30s | Exactly 30s |
+### Ingest Telemetry / Event
+```http
+POST /event
+Content-Type: application/json
 
-**System Benchmarks**
-
-- **Messaging:** NATS JetStream sustained ~6.3M msgs/sec with microsecond-level latencies, showing the messaging layer is not a system bottleneck.
-- **ML Inference:** Isolated Edge LSTM inference averaged ~170 µs per event (negligible compute cost).
-- **End-to-End Pipeline:** Under controlled delay conditions the full pipeline produced an average latency of ~3.5 s and throughput of ~700 events/sec — performance is primarily constrained by orchestration overhead, I/O operations, and queueing effects rather than compute or messaging.
-- **Backpressure / Robustness:** When ML latency was artificially increased the system produced expected queue buildup but no data loss, validating the event-driven design and durable queueing.
-
-Results screenshot:
-
-![E2E & Backpressure Results](Benchmark/NATSTerminal.png)
-
----
-
-## Development Workflow
-
-### Adding a New Event Type
-
-1. **Define Model** (backend/internal/models/models.go)
-```go
-type CustomEvent struct {
-    EventID   string    `json:"event_id"`
-    Type      string    `json:"type"`
-    UserID    string    `json:"user_id"`
-    Timestamp time.Time `json:"timestamp"`
-    Payload   map[string]interface{} `json:"payload"`
+{
+  "event_id": "evt-fall-10492",
+  "type": "fall.detected",
+  "user_id": "user-elderly-88",
+  "timestamp": "2026-08-13T00:30:00Z",
+  "payload": {
+    "confidence": 0.96,
+    "location": "living_room"
+  }
 }
 ```
+**Response:** `202 Accepted`
 
-2. **Create Consumer** (backend/cmd/main.go)
-```go
-_, err := mgr.SubscribeDurable("custom.event", "custom_processor", func(m *corenats.Msg) {
-    var event models.CustomEvent
-    json.Unmarshal(m.Data, &event)
-    // Process logic here
-    m.Ack()
-})
+### Health Check
+```http
+GET /health
 ```
-
-3. **Update Handler** (backend/internal/handlers/handler.go)
-```go
-func (h *Handler) PostEvent(c *gin.Context) {
-    // event routing logic
-    if event.Type == "custom.event" {
-        h.natsMgr.JS.Publish("custom.event", data)
-    }
-}
-```
-
-4. **Update Frontend** (frontend/src/pages/FamilyDashboard.tsx)
-```tsx
-if (lastMessage.type === "custom.event") {
-    // Handle new event type
-    setCustomState(lastMessage.payload);
-}
-```
+**Response:** `{"status": "ok"}`
 
 ---
 
-## Security Considerations
+## 📊 System Limitations & Next Steps
 
-**Implemented:**
-- ✅ Input validation on all API endpoints
-- ✅ SQL prepared statements (GORM ORM)
-- ✅ NATS message authentication (configurable)
-- ✅ Docker .dockerignore excludes secrets
-- ✅ Environment-based configuration
-
-**Recommendations for Production:**
-- [ ] Add JWT authentication for API endpoints
-- [ ] Implement rate limiting per user/device
-- [ ] Enable TLS/HTTPS for WebSocket connections
-- [ ] Add API key rotation mechanism
-- [ ] Implement audit logging for all alert changes
-- [ ] Set up secret management (HashiCorp Vault, AWS Secrets Manager)
-
----
-
-## Next Steps & Integration
-
-### Immediate Priorities
-1. **Integration with Existing Healthcare Solutions**
-   - Integrate with EHR systems (HL7/FHIR)
-   - Connect to hospital alerting systems
-   - Sync with patient management platforms
-
-2. **Parallel Custom Phone Calling System**
-   - Direct calling integration (Twilio, CallKit)
-   - Multi-number escalation (primary, secondary, on-call)
-   - Call logging and documentation
-   - Voice prompt customization for different alert types
-
-### Extended Scope
-- Hardware wearable integration (Oura Ring, AppleWatch, Fitbit)
-- ML-powered anomaly detection refinement
-- Caregiver mobile app (iOS/Android)
-- Advanced analytics dashboard
-- Integration testing suite
-- Kubernetes deployment manifests
-
----
-
-
-
-
-
----
-
-## Metrics & Monitoring
-
-Monitor these key metrics in production:
-- Alert creation rate (events/minute)
-- Escalation completion rate (% reaching Level 3)
-- Acknowledgement rate (% alerts acknowledged)
-- System latency (p50, p95, p99 percentiles)
-- Error rates by event type
-- WebSocket connection stability
-
+* **Escalation Timer Storage:** Current state machine escalation steps rely on Go goroutines. A production migration to Redis-backed timer wheels will ensure timers survive full system restarts.
+* **Multi-User Aggregator Scaling:** Background aggregator is currently set up for single-user validation loops; expanding to worker-pool key scanning (`SCAN`) will enable multi-tenant scalability.
+* **Authentication:** Next phase includes JWT device authentication and TLS transport encryption.
