@@ -1,17 +1,4 @@
 services:
-  backend:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - DB_HOST=postgres
-      - REDIS_HOST=redis
-      - NATS_URL=nats://nats:4222
-    depends_on:
-      - postgres
-      - redis
-      - nats
-
   postgres:
     image: postgres:15-alpine
     environment:
@@ -22,18 +9,66 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gharseva"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   nats:
     image: nats:2.10-alpine
-    command: ["-js"]
+    command: ["-js", "-m", "8222"]
     ports:
       - "4222:4222"
       - "8222:8222"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=gharseva
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - NATS_URL=nats://nats:4222
+      # ML service is NOT in compose — the Go backend will fail gracefully
+      # (ml_service.go returns error on connect failure, which is caught and logged)
+      - ML_SERVICE_URL=http://localhost:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
 
 volumes:
   pgdata:

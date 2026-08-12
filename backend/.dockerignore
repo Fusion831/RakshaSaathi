@@ -56,3 +56,21 @@ docker-compose.yml
 # Development
 Makefile
 scripts/
+
+# ---- LARGE FILES NOT NEEDED FOR GO BUILD ----
+# Python virtualenv (can be hundreds of MB)
+.venv/
+
+# ML training data (PhysioNet dataset, can be several GB)
+Data/
+
+# Pre-compiled binary on host (we rebuild inside Docker)
+app.exe
+*.exe
+
+# Benchmark scripts (standalone, not part of app binary)
+bench_*.go
+bench_*.py
+
+# Benchmark result images
+Benchmark/
