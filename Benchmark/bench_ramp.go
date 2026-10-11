@@ -1,11 +1,11 @@
-﻿// bench_ramp.go — Progressive load ramp test for RakshaSaathi
+// bench_ramp.go — Progressive load ramp test for RakshaSaathi
 //
 // Sends events in escalating waves. At each level it measures:
 //   - Acceptance rate  (HTTP 202 / total sent)
-//   - Pipeline completion rate (alert appeared in Redis / accepted)
+//   - Pipeline completion rate (SPECIFIC event successfully processed in Redis / accepted)
 //   - Timeout count (events that never made it through in deadline)
 //   - Full-pipeline P50/P95/P99 latency
-//   - NATS stream backlog (via monitoring port 8222)
+//   - NATS true consumer backlog (via /jsz?consumers=true: NumPending + NumAckPending)
 //
 // Breaking-point detection:
 //   A level is declared DEGRADED  when pipeline completion < 95% or P99 > 500ms
@@ -13,7 +13,7 @@
 //   The test stops after 2 consecutive FAILED levels.
 //
 // Ramp schedule (configurable via -ramp flag):
-//   Default: 10,50,100,250,500,1000,2500,5000,10000
+//   Default: 1,5,10,25,50,100,250,500,1000,2500,5000
 //
 // Usage:
 //   go run bench_ramp.go [flags]
@@ -87,6 +87,13 @@ func isAlertType(t string) bool {
 	return t == "fall.detected" || t == "sos.triggered" || t == "anomaly.detected"
 }
 
+var consumerNameMap = map[string]string{
+	"fall.detected":    "fall_processor",
+	"sos.triggered":    "sos_processor",
+	"anomaly.detected": "anomaly_processor",
+	"vitals.updated":   "vitals_processor",
+}
+
 // ── Percentile ───────────────────────────────────────────────────────────────
 
 func pct(sorted []float64, p float64) float64 {
@@ -101,45 +108,82 @@ func pct(sorted []float64, p float64) float64 {
 	return sorted[lo]*(1-(r-float64(lo))) + sorted[lo+1]*(r-float64(lo))
 }
 
-// ── NATS monitor ─────────────────────────────────────────────────────────────
+// ── NATS True Consumer Backlog Monitor ──────────────────────────────────────
 
-type natsStreamZ struct {
-	State struct {
-		Msgs  int64 `json:"messages"`
-		Bytes int64 `json:"bytes"`
-	} `json:"state"`
+type natsJsz struct {
+	AccountDetails []struct {
+		StreamDetail []struct {
+			Name           string `json:"name"`
+			ConsumerDetail []struct {
+				Name          string `json:"name"`
+				NumPending    int64  `json:"num_pending"`
+				NumAckPending int64  `json:"num_ack_pending"`
+				NumRedelivered int64 `json:"num_redelivered"`
+			} `json:"consumer_detail"`
+		} `json:"stream_detail"`
+	} `json:"account_details"`
 }
 
-func natsBacklog(monURL string) (msgs int64, bytes int64) {
-	r, err := http.Get(monURL + "/streamz?name=RAKSHASAATHI")
+type ConsumerLag struct {
+	NumPending    int64 // Messages in stream not yet delivered to consumer
+	NumAckPending int64 // Messages delivered but unacknowledged (in-flight)
+	TotalLag      int64 // Total unprocessed backlog
+}
+
+func natsConsumerLag(monURL, consumerName string) ConsumerLag {
+	if monURL == "" {
+		return ConsumerLag{}
+	}
+	r, err := http.Get(monURL + "/jsz?consumers=true")
 	if err != nil {
-		return -1, -1
+		return ConsumerLag{}
 	}
 	defer r.Body.Close()
 	body, _ := io.ReadAll(r.Body)
-	var z natsStreamZ
-	if json.Unmarshal(body, &z) != nil {
-		return -1, -1
+	var jsz natsJsz
+	if json.Unmarshal(body, &jsz) != nil {
+		return ConsumerLag{}
 	}
-	return z.State.Msgs, z.State.Bytes
+	for _, acc := range jsz.AccountDetails {
+		for _, st := range acc.StreamDetail {
+			if st.Name == "RAKSHASAATHI" {
+				for _, cd := range st.ConsumerDetail {
+					if cd.Name == consumerName {
+						return ConsumerLag{
+							NumPending:    cd.NumPending,
+							NumAckPending: cd.NumAckPending,
+							TotalLag:      cd.NumPending + cd.NumAckPending,
+						}
+					}
+				}
+			}
+		}
+	}
+	return ConsumerLag{}
 }
 
-// ── Redis poll ────────────────────────────────────────────────────────────────
+// ── Deterministic Redis Verification (O(1), zero false positives) ───────────
 
-func pollRedis(ctx context.Context, rdb *redis.Client, evType, userID string, timeout time.Duration) (latMs float64, found bool) {
-	var pattern string
-	if isAlertType(evType) {
-		pattern = fmt.Sprintf("alert:alert:%s:*", userID)
-	} else {
-		pattern = fmt.Sprintf("vitals:%s", userID)
-	}
+func pollRedis(ctx context.Context, rdb *redis.Client, ev Event, timeout time.Duration) (latMs float64, found bool) {
 	deadline := time.Now().Add(timeout)
 	start := time.Now()
 	for time.Now().Before(deadline) {
-		if keys, _ := rdb.Keys(ctx, pattern).Result(); len(keys) > 0 {
-			return time.Since(start).Seconds() * 1000, true
+		if isAlertType(ev.Type) {
+			// Deterministic check: AlertEngine sets "processed:<EventID>" in Redis via SetNX.
+			// This is an O(1) lookup tied specifically to THIS event instance.
+			if n, _ := rdb.Exists(ctx, "processed:"+ev.EventID).Result(); n > 0 {
+				return time.Since(start).Seconds() * 1000, true
+			}
+		} else {
+			// For vitals: VitalsProcessor writes to sorted set "vitals:<UserID>" with score = Timestamp.Unix()
+			key := fmt.Sprintf("vitals:%s", ev.UserID)
+			scoreStr := fmt.Sprintf("%d", ev.Timestamp.Unix())
+			count, _ := rdb.ZCount(ctx, key, scoreStr, scoreStr).Result()
+			if count > 0 {
+				return time.Since(start).Seconds() * 1000, true
+			}
 		}
-		time.Sleep(200 * time.Microsecond)
+		time.Sleep(150 * time.Microsecond)
 	}
 	return timeout.Seconds() * 1000, false
 }
@@ -153,30 +197,30 @@ const (
 )
 
 type LevelResult struct {
-	Events      int
-	Concurrency int
-	Status      string
-	DurationMs  float64
-	ThroughputEPS float64
+	Events        int     `json:"events"`
+	Concurrency   int     `json:"concurrency"`
+	Status        string  `json:"status"`
+	DurationMs    float64 `json:"duration_ms"`
+	ThroughputEPS float64 `json:"throughput_eps"`
 	// HTTP layer
-	Accepted    int
-	HTTPErrors  int
-	AcceptPct   float64
-	// Pipeline layer
-	PipelineOK  int
-	TimedOut    int
-	PipelinePct float64
-	// Latency (full pipeline: POST sent -> Redis key visible)
-	P50  float64
-	P95  float64
-	P99  float64
-	Min  float64
-	Max  float64
-	Avg  float64
-	// NATS state
-	NATSMsgsBefore int64
-	NATSMsgsAfter  int64
-	NATSBacklog    int64 // msgs not yet consumed
+	Accepted   int     `json:"accepted"`
+	HTTPErrors int     `json:"http_errors"`
+	AcceptPct  float64 `json:"accept_pct"`
+	// Pipeline layer (strictly verified)
+	PipelineOK  int     `json:"pipeline_ok"`
+	TimedOut    int     `json:"timed_out"`
+	PipelinePct float64 `json:"pipeline_pct"`
+	// Latency (full pipeline: POST sent -> Redis processed:<event_id> visible)
+	P50 float64 `json:"p50"`
+	P95 float64 `json:"p95"`
+	P99 float64 `json:"p99"`
+	Min float64 `json:"min"`
+	Max float64 `json:"max"`
+	Avg float64 `json:"avg"`
+	// True NATS consumer lag
+	ConsumerName string `json:"consumer_name"`
+	PeakLag      int64  `json:"peak_lag"`      // Max (NumPending + NumAckPending) under load
+	RemainingLag int64  `json:"remaining_lag"` // Messages still unACKed after test
 }
 
 // ── Run one level ────────────────────────────────────────────────────────────
@@ -192,6 +236,8 @@ func runLevel(
 		conc = maxConc
 	}
 
+	consumerName := consumerNameMap[evType]
+
 	// Clean Redis
 	for _, pat := range []string{"alert:alert:ramp_*", "vitals:ramp_*", "processed:ramp-*"} {
 		if keys, _ := rdb.Keys(ctx, pat).Result(); len(keys) > 0 {
@@ -200,13 +246,30 @@ func runLevel(
 	}
 	time.Sleep(30 * time.Millisecond)
 
-	msgsBefore, _ := natsBacklog(natsMonURL)
-
-	// Build events (unique user per event so Redis keys don't collide)
+	// Build events (strictly unique EventID per event)
 	events := make([]Event, numEvents)
 	for i := 0; i < numEvents; i++ {
 		events[i] = makeEvent(evType, fmt.Sprintf("ramp_user_%d", i), i)
 	}
+
+	// Dynamic NATS consumer lag sampler
+	var peakLag atomic.Int64
+	stopSampler := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(25 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopSampler:
+				return
+			case <-ticker.C:
+				lag := natsConsumerLag(natsMonURL, consumerName)
+				if lag.TotalLag > peakLag.Load() {
+					peakLag.Store(lag.TotalLag)
+				}
+			}
+		}
+	}()
 
 	type result struct {
 		accepted bool
@@ -243,7 +306,8 @@ func runLevel(
 				}
 				accepted.Add(1)
 
-				lat, found := pollRedis(ctx, rdb, ev.Type, ev.UserID, pollTimeout)
+				// Deterministic check: poll strictly for THIS event instance
+				lat, found := pollRedis(ctx, rdb, ev, pollTimeout)
 				results[seq] = result{accepted: true, found: found, latMs: lat}
 			}
 		}()
@@ -255,7 +319,13 @@ func runLevel(
 	wg.Wait()
 	dur := time.Since(start)
 
-	msgsAfter, _ := natsBacklog(natsMonURL)
+	// Stop lag sampling
+	close(stopSampler)
+	finalLag := natsConsumerLag(natsMonURL, consumerName)
+	peak := peakLag.Load()
+	if finalLag.TotalLag > peak {
+		peak = finalLag.TotalLag
+	}
 
 	acc := int(accepted.Load())
 	herr := int(httpErrors.Load())
@@ -290,13 +360,6 @@ func runLevel(
 		pipePct = 100.0 * float64(pipeOK) / float64(acc)
 	}
 
-	backlog := int64(0)
-	if msgsAfter > 0 && msgsBefore > 0 {
-		backlog = msgsAfter - msgsBefore
-	} else if msgsAfter > 0 {
-		backlog = msgsAfter
-	}
-
 	// Determine status
 	httpErrPct := 100.0 * float64(herr) / float64(numEvents)
 	status := StatusOK
@@ -309,26 +372,36 @@ func runLevel(
 	}
 
 	return LevelResult{
-		Events:         numEvents,
-		Concurrency:    conc,
-		Status:         status,
-		DurationMs:     dur.Seconds() * 1000,
-		ThroughputEPS:  float64(acc) / dur.Seconds(),
-		Accepted:       acc,
-		HTTPErrors:     herr,
-		AcceptPct:      acceptPct,
-		PipelineOK:     pipeOK,
-		TimedOut:       timedOut,
-		PipelinePct:    pipePct,
-		P50:            pct(latencies, 0.50),
-		P95:            pct(latencies, 0.95),
-		P99:            p99Val,
-		Min:            func() float64 { if len(latencies) == 0 { return 0 }; return latencies[0] }(),
-		Max:            func() float64 { if len(latencies) == 0 { return 0 }; return latencies[len(latencies)-1] }(),
-		Avg:            avg,
-		NATSMsgsBefore: msgsBefore,
-		NATSMsgsAfter:  msgsAfter,
-		NATSBacklog:    backlog,
+		Events:        numEvents,
+		Concurrency:   conc,
+		Status:        status,
+		DurationMs:    dur.Seconds() * 1000,
+		ThroughputEPS: float64(acc) / dur.Seconds(),
+		Accepted:      acc,
+		HTTPErrors:    herr,
+		AcceptPct:     acceptPct,
+		PipelineOK:    pipeOK,
+		TimedOut:      timedOut,
+		PipelinePct:   pipePct,
+		P50:           pct(latencies, 0.50),
+		P95:           pct(latencies, 0.95),
+		P99:           p99Val,
+		Min: func() float64 {
+			if len(latencies) == 0 {
+				return 0
+			}
+			return latencies[0]
+		}(),
+		Max: func() float64 {
+			if len(latencies) == 0 {
+				return 0
+			}
+			return latencies[len(latencies)-1]
+		}(),
+		Avg:          avg,
+		ConsumerName: consumerName,
+		PeakLag:      peak,
+		RemainingLag: finalLag.TotalLag,
 	}
 }
 
@@ -354,45 +427,46 @@ func printLevel(lvl LevelResult, idx int) {
 		label, idx+1, lvl.Events, lvl.Concurrency, lvl.DurationMs, lvl.ThroughputEPS)
 	fmt.Printf("         HTTP:     %d/%d accepted (%.1f%%)  errors=%d\n",
 		lvl.Accepted, lvl.Events, lvl.AcceptPct, lvl.HTTPErrors)
-	fmt.Printf("         Pipeline: %d/%d complete (%.1f%%)  timedout=%d\n",
+	fmt.Printf("         Pipeline: %d/%d strictly verified (%.1f%%)  timedout=%d\n",
 		lvl.PipelineOK, lvl.Accepted, lvl.PipelinePct, lvl.TimedOut)
-	if len := lvl.PipelineOK; len > 0 {
+	if lvl.PipelineOK > 0 {
 		fmt.Printf("         Latency:  min=%.1fms  avg=%.1fms  P50=%.1fms  P95=%.1fms  P99=%.1fms  max=%.1fms\n",
 			lvl.Min, lvl.Avg, lvl.P50, lvl.P95, lvl.P99, lvl.Max)
 	}
-	fmt.Printf("         NATS backlog: %d msgs  Redis pipeline [%s] %.0f%%\n",
-		lvl.NATSBacklog, bar(lvl.PipelinePct, 20), lvl.PipelinePct)
+	fmt.Printf("         NATS Consumer (%s): peak queue depth=%d msgs, remaining=%d msgs | Redis [%s] %.0f%%\n",
+		lvl.ConsumerName, lvl.PeakLag, lvl.RemainingLag, bar(lvl.PipelinePct, 20), lvl.PipelinePct)
 }
 
 func printSummaryTable(levels []LevelResult) {
-	fmt.Println("\n" + strings.Repeat("=", 100))
-	fmt.Println("  RAMP TEST SUMMARY")
-	fmt.Println(strings.Repeat("=", 100))
-	fmt.Printf("  %-8s %-8s %-10s %-8s %-10s %-10s %-10s %-10s %-10s %s\n",
-		"Events", "Workers", "EPS", "Acc%", "Pipeline%", "P50(ms)", "P95(ms)", "P99(ms)", "TimedOut", "Status")
-	fmt.Println(strings.Repeat("-", 100))
+	fmt.Println("\n" + strings.Repeat("=", 115))
+	fmt.Println("  RAMP TEST SUMMARY (Deterministic Event Verification & True Consumer Lag)")
+	fmt.Println(strings.Repeat("=", 115))
+	fmt.Printf("  %-7s %-7s %-8s %-7s %-10s %-8s %-8s %-8s %-8s %-8s %-8s %s\n",
+		"Events", "Workers", "EPS", "Acc%", "Pipeline%", "P50(ms)", "P95(ms)", "P99(ms)", "Timeouts", "PeakLag", "RemLag", "Status")
+	fmt.Println(strings.Repeat("-", 115))
 	for _, lvl := range levels {
-		fmt.Printf("  %-8d %-8d %-10.0f %-8.1f %-10.1f %-10.1f %-10.1f %-10.1f %-10d %s\n",
+		fmt.Printf("  %-7d %-7d %-8.0f %-7.1f %-10.1f %-8.1f %-8.1f %-8.1f %-8d %-8d %-8d %s\n",
 			lvl.Events, lvl.Concurrency, lvl.ThroughputEPS,
 			lvl.AcceptPct, lvl.PipelinePct,
 			lvl.P50, lvl.P95, lvl.P99,
-			lvl.TimedOut, lvl.Status)
+			lvl.TimedOut, lvl.PeakLag, lvl.RemainingLag, lvl.Status)
 	}
-	fmt.Println(strings.Repeat("=", 100))
+	fmt.Println(strings.Repeat("=", 115))
 
 	// Breaking point
 	for i, lvl := range levels {
 		if lvl.Status == StatusFailed {
 			fmt.Printf("\n  BREAKING POINT: %d events (level %d)\n", lvl.Events, i+1)
-			fmt.Printf("  Failure mode:   pipeline=%.1f%%  timedout=%d  http_errors=%d  P99=%.1fms\n",
-				lvl.PipelinePct, lvl.TimedOut, lvl.HTTPErrors, lvl.P99)
+			fmt.Printf("  Failure mode:   pipeline=%.1f%%  timedout=%d  peak_lag=%d  rem_lag=%d  P99=%.1fms\n",
+				lvl.PipelinePct, lvl.TimedOut, lvl.PeakLag, lvl.RemainingLag, lvl.P99)
 			break
 		}
 	}
 	// Degradation point
 	for i, lvl := range levels {
 		if lvl.Status == StatusDegraded {
-			fmt.Printf("  DEGRADES AT:    %d events (level %d)\n", lvl.Events, i+1)
+			fmt.Printf("  DEGRADES AT:    %d events (level %d) | Peak consumer queue depth: %d msgs\n",
+				lvl.Events, i+1, lvl.PeakLag)
 			break
 		}
 	}
@@ -401,20 +475,22 @@ func printSummaryTable(levels []LevelResult) {
 // ── main ─────────────────────────────────────────────────────────────────────
 
 func main() {
-	backendURL  := flag.String("url",         "http://localhost:8080", "Backend URL")
-	redisAddr   := flag.String("redis",        "localhost:6379",       "Redis address")
-	natsMonURL  := flag.String("nats-mon",     "http://localhost:8222","NATS monitor URL")
-	maxConc     := flag.Int("concurrency",     100,                    "Max concurrent workers")
-	timeoutMS   := flag.Int("timeout-ms",      3000,                   "Per-event pipeline timeout ms")
-	evTypeShort := flag.String("type",         "fall",                 "Event type: fall|sos|anomaly|vitals")
-	rampStr     := flag.String("ramp",
+	backendURL := flag.String("url", "http://localhost:8080", "Backend URL")
+	redisAddr := flag.String("redis", "localhost:6379", "Redis address")
+	natsMonURL := flag.String("nats-mon", "http://localhost:8222", "NATS monitor URL")
+	maxConc := flag.Int("concurrency", 100, "Max concurrent workers")
+	timeoutMS := flag.Int("timeout-ms", 3000, "Per-event pipeline timeout ms")
+	evTypeShort := flag.String("type", "fall", "Event type: fall|sos|anomaly|vitals")
+	rampStr := flag.String("ramp",
 		"1,5,10,25,50,100,250,500,1000,2500,5000",
 		"Comma-separated ramp schedule")
 	flag.Parse()
 
 	evTypeMap := map[string]string{
-		"fall": "fall.detected", "sos": "sos.triggered",
-		"anomaly": "anomaly.detected", "vitals": "vitals.updated",
+		"fall":    "fall.detected",
+		"sos":     "sos.triggered",
+		"anomaly": "anomaly.detected",
+		"vitals":  "vitals.updated",
 	}
 	evType, ok := evTypeMap[*evTypeShort]
 	if !ok {
@@ -435,14 +511,14 @@ func main() {
 	pollTimeout := time.Duration(*timeoutMS) * time.Millisecond
 	ctx := context.Background()
 
-	fmt.Println(strings.Repeat("=", 70))
-	fmt.Println("  RakshaSaathi -- Progressive Ramp Load Test")
-	fmt.Println(strings.Repeat("=", 70))
-	fmt.Printf("  Backend:      %s\n", *backendURL)
-	fmt.Printf("  Event type:   %s\n", evType)
-	fmt.Printf("  Max workers:  %d\n", *maxConc)
-	fmt.Printf("  Poll timeout: %dms\n", *timeoutMS)
-	fmt.Printf("  Ramp:         %v\n", ramp)
+	fmt.Println(strings.Repeat("=", 75))
+	fmt.Println("  RakshaSaathi -- Progressive Ramp Load Test (Fixed & Verified)")
+	fmt.Println(strings.Repeat("=", 75))
+	fmt.Printf("  Backend:       %s\n", *backendURL)
+	fmt.Printf("  Event type:    %s (Consumer: %s)\n", evType, consumerNameMap[evType])
+	fmt.Printf("  Max workers:   %d\n", *maxConc)
+	fmt.Printf("  Poll timeout:  %dms\n", *timeoutMS)
+	fmt.Printf("  Ramp schedule: %v\n", ramp)
 	fmt.Println()
 
 	// Preflight
@@ -459,11 +535,11 @@ func main() {
 	}
 	fmt.Println("[OK] Redis reachable")
 
-	if r, err := http.Get(*natsMonURL + "/healthz"); err == nil {
+	if r, err := http.Get(*natsMonURL + "/jsz?consumers=true"); err == nil {
 		r.Body.Close()
-		fmt.Println("[OK] NATS monitoring reachable")
+		fmt.Println("[OK] NATS monitoring reachable (/jsz?consumers=true)")
 	} else {
-		fmt.Println("[WARN] NATS monitoring not reachable — backlog data will be N/A")
+		fmt.Println("[WARN] NATS monitoring not reachable — consumer queue lag will be N/A")
 	}
 	fmt.Println()
 
@@ -511,18 +587,19 @@ func main() {
 
 	// Save JSON
 	type Output struct {
-		Timestamp string        `json:"timestamp"`
+		Timestamp string                 `json:"timestamp"`
 		Config    map[string]interface{} `json:"config"`
-		Levels    []LevelResult `json:"levels"`
+		Levels    []LevelResult          `json:"levels"`
 	}
 	out := Output{
 		Timestamp: time.Now().Format(time.RFC3339),
 		Config: map[string]interface{}{
-			"backend_url":  *backendURL,
-			"event_type":   evType,
-			"max_workers":  *maxConc,
-			"timeout_ms":   *timeoutMS,
-			"ramp":         ramp,
+			"backend_url": *backendURL,
+			"event_type":  evType,
+			"consumer":    consumerNameMap[evType],
+			"max_workers": *maxConc,
+			"timeout_ms":  *timeoutMS,
+			"ramp":        ramp,
 		},
 		Levels: levels,
 	}

@@ -1,4 +1,4 @@
-﻿// bench_real.go — Honest multi-trial RakshaSaathi pipeline benchmark
+// bench_real.go — Honest multi-trial RakshaSaathi pipeline benchmark
 //
 // WHAT THIS MEASURES (honestly):
 //   1. Flush bench keys from Redis (clean state per trial)
@@ -81,20 +81,21 @@ type pollResult struct {
 	timedOut  bool
 }
 
-func pollPipeline(ctx context.Context, rdb *redis.Client, evType, userID string,
+func pollPipeline(ctx context.Context, rdb *redis.Client, ev Event,
 	pollInterval, timeout time.Duration) pollResult {
 	deadline := time.Now().Add(timeout)
-	var pattern string
-	if isAlertEvent(evType) {
-		pattern = fmt.Sprintf("alert:alert:%s:*", userID)
-	} else {
-		pattern = fmt.Sprintf("vitals:%s", userID)
-	}
 	start := time.Now()
 	for time.Now().Before(deadline) {
-		keys, err := rdb.Keys(ctx, pattern).Result()
-		if err == nil && len(keys) > 0 {
-			return pollResult{latencyMs: time.Since(start).Seconds() * 1000, found: true}
+		if isAlertEvent(ev.Type) {
+			if n, err := rdb.Exists(ctx, "processed:"+ev.EventID).Result(); err == nil && n > 0 {
+				return pollResult{latencyMs: time.Since(start).Seconds() * 1000, found: true}
+			}
+		} else {
+			key := fmt.Sprintf("vitals:%s", ev.UserID)
+			scoreStr := fmt.Sprintf("%d", ev.Timestamp.Unix())
+			if count, err := rdb.ZCount(ctx, key, scoreStr, scoreStr).Result(); err == nil && count > 0 {
+				return pollResult{latencyMs: time.Since(start).Seconds() * 1000, found: true}
+			}
 		}
 		time.Sleep(pollInterval)
 	}
@@ -207,7 +208,7 @@ func runTrial(num int, url string, rdb *redis.Client, client *http.Client,
 					continue
 				}
 				accepted.Add(1)
-				pr := pollPipeline(ctx, rdb, ev.Type, ev.UserID, pollInt, timeout)
+				pr := pollPipeline(ctx, rdb, ev, pollInt, timeout)
 				results[seq] = meas{pollResult: pr, seq: seq}
 			}
 		}()
