@@ -1,0 +1,12 @@
+2026/10/11 22:08:08 No .env file found, using environment variables
+2026/10/11 22:08:08 Connected to PostgreSQL successfully
+2026/10/11 22:08:08 Connected to Redis successfully
+2026/10/11 22:08:08 Stream RAKSHASAATHI not found, creating...
+2026/10/11 22:08:08 Connected to NATS JetStream successfully
+2026/10/11 22:08:08 Durable subscriber fall_processor created for subject fall.detected
+2026/10/11 22:08:08 Durable subscriber vitals_processor created for subject vitals.updated
+2026/10/11 22:08:08 Durable subscriber anomaly_processor created for subject anomaly.detected
+2026/10/11 22:08:08 Durable subscriber sos_processor created for subject sos.triggered
+2026/10/11 22:08:08 NATS Durable Consumers started for fall, anomalies, and SOS
+2026/10/11 22:08:08 [VitalsAggregator] Aggregation worker started with interval: 5m0s
+2026/10/11 22:08:08 Starting RakshaSaathi server on port 8081
